@@ -1,0 +1,25 @@
+# Local logs and settings
+*.log
+*.jsonl
+.wslconfig
+
+# WSL exports and virtual disks
+*.tar
+*.tar.gz
+*.vhd
+*.vhdx
+*.partial
+*.tar.json
+*.vhdx.json
+
+# Test artifacts
+TestResults/
+coverage/
+*.trx
+
+# PowerShell/editor/OS
+[Pp]S[Aa]nalysis*.xml
+.vscode/
+.idea/
+Thumbs.db
+Desktop.ini
