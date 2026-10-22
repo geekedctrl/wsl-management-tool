@@ -1,5 +1,7 @@
 # WSL Manager
 
+> **Development preview — not production-validated.** Version 1.0.0 has been checked with automated unit tests and local read-only/CLI validation. Live WSL backup, restore, move, and clone integration workflows have not been completed. Treat data-changing features as preview software and maintain independent backups.
+
 WSL Manager is a PowerShell 5.1+ command-line and terminal menu for inspecting and safely managing Windows Subsystem for Linux distributions. Version 1.0.0 focuses on explicit operations, refusal to overwrite, and clear reporting when WSL does not advertise a capability.
 
 ## Supported environment
