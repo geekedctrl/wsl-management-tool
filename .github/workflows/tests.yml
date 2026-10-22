@@ -1,0 +1,17 @@
+name: PowerShell tests
+on:
+  push:
+  pull_request:
+jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Pester
+        shell: pwsh
+        run: Install-Module Pester -MinimumVersion 5.0 -MaximumVersion 5.99.99 -Scope CurrentUser -Force
+      - name: Run unit tests
+        shell: pwsh
+        run: |
+          $result = Invoke-Pester ./tests/Unit -Output Detailed -PassThru
+          if ($result.FailedCount -gt 0) { exit 1 }
