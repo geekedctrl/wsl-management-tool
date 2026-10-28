@@ -1,6 +1,7 @@
 Set-StrictMode -Version 2
 
-$script:WslExe = (Get-Command wsl.exe -ErrorAction SilentlyContinue).Source
+$wslCommand = Get-Command wsl.exe -ErrorAction SilentlyContinue
+$script:WslExe = if ($null -ne $wslCommand) { $wslCommand.Source } else { $null }
 $script:AppRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $script:DataRoot = Join-Path $env:LOCALAPPDATA 'WSLManager'
 $script:WslExecutor = $null
@@ -77,7 +78,7 @@ function Get-WslCapabilities {
         $h = Invoke-Wsl -ArgumentList @('--help') -AllowFailure; $help = $h.StdOut + "`n" + $h.StdErr
         $s = Invoke-Wsl -ArgumentList @('--status') -AllowFailure; $status=$s.StdOut + "`n" + $s.StdErr
     }
-    [pscustomobject]@{ Available=$available; Version=$version; Status=$status.Trim(); SupportsVhdExport=($help -match '--vhd'); SupportsImportInPlace=($help -match '--import-in-place'); SupportsManage=($help -match '--manage'); SupportsManageMove=($help -match '--move'); SupportsResize=($help -match '--resize'); Help=$help.Trim() }
+    [pscustomobject]@{ Available=$available; Version=$version; Status=$status.Trim(); SupportsVhdExport=($help -match '--vhd'); SupportsImportInPlace=($help -match '--import-in-place'); SupportsSetVersion=($help -match '--set-version'); SupportsManage=($help -match '--manage'); SupportsManageMove=($help -match '--move'); SupportsResize=($help -match '--resize'); Help=$help.Trim() }
 }
 
 function Get-WslDistributions {
@@ -111,17 +112,41 @@ function Get-WslDistro {
     return $d[0]
 }
 
+function Assert-WslDistroOperationAllowed {
+    param([Parameter(Mandatory)]$Distribution,[Parameter(Mandatory)][string]$Operation)
+    if($Distribution.IsProtected -and $Operation -in @('Terminate','SetDefault','Convert','Unregister','Move','Clone','Resize')){
+        throw "Operation '$Operation' is refused for protected system-managed distribution '$($Distribution.Name)'."
+    }
+}
+
 function Get-WslDistroDetails {
     param([Parameter(Mandatory)][string]$Name)
-    $d=Get-WslDistro $Name; $location=$null; $vhd=$null; $linuxStorage=$null; $wslConf=$null
+    $d=Get-WslDistro $Name; $location=$null; $vhd=$null; $vhdReason='A registered VHDX location could not be reliably discovered.'; $hostVolume=$null; $hostVolumeReason='Host volume free space is unavailable because its local drive could not be identified.'; $linuxStorage=$null; $wslConf=$null
     $key='HKCU:\Software\Microsoft\Windows\CurrentVersion\Lxss'
     if(Test-Path -LiteralPath $key){
         foreach($entry in (Get-ChildItem -LiteralPath $key -ErrorAction SilentlyContinue)){
             $meta=Get-ItemProperty -LiteralPath $entry.PSPath -ErrorAction SilentlyContinue
             if($meta.DistributionName -ceq $Name -and $meta.BasePath -and (Test-Path -LiteralPath $meta.BasePath -PathType Container)){
                 $location=[IO.Path]::GetFullPath([string]$meta.BasePath)
-                $candidate=Join-Path $location 'ext4.vhdx'
-                if(Test-Path -LiteralPath $candidate -PathType Leaf){$file=Get-Item -LiteralPath $candidate;$vhd=[pscustomobject]@{Path=$candidate;SizeBytes=$file.Length;LastWriteTimeUtc=$file.LastWriteTimeUtc.ToString('o')}}
+                # Join-Path's FileSystem provider rejects device paths (\\?\C:\...) in Windows PowerShell 5.1.
+                $candidate=[IO.Path]::Combine($location,'ext4.vhdx')
+                if(Test-Path -LiteralPath $candidate -PathType Leaf){
+                    $file=Get-Item -LiteralPath $candidate
+                    $capacity=$null; $capacityReason=''
+                    if($script:WslExecutor){$capacityReason='Virtual capacity inspection skipped while the WSL adapter is mocked.'}
+                    elseif(-not (Get-Command Get-VHD -ErrorAction SilentlyContinue)){$capacityReason='Virtual capacity is unavailable because the read-only Get-VHD cmdlet is not installed.'}
+                    else{
+                        try{$capacity=[long](Get-VHD -Path $candidate -ErrorAction Stop).Size}
+                        catch{$capacityReason='Virtual capacity is unavailable because Get-VHD could not inspect this disk with current permissions or while it is in use.'}
+                    }
+                    $vhd=[pscustomobject]@{Path=$candidate;SizeBytes=[long]$file.Length;VirtualCapacityBytes=$capacity;CapacityUnavailableReason=if($null -eq $capacity){$capacityReason}else{$null};LastWriteTimeUtc=$file.LastWriteTimeUtc.ToString('o')}
+                    $vhdReason=$null
+                    $driveMatch=[regex]::Match($candidate,'^(?:\\\\\?\\)?(?<drive>[A-Za-z]):\\')
+                    if($driveMatch.Success){
+                        $hostDrive=Get-PSDrive -Name $driveMatch.Groups['drive'].Value -PSProvider FileSystem -ErrorAction SilentlyContinue
+                        if($hostDrive){$hostVolume=[pscustomobject]@{Name=$hostDrive.Name;Root=$hostDrive.Root;FreeBytes=[long]$hostDrive.Free;UsedBytes=[long]$hostDrive.Used};$hostVolumeReason=$null}
+                    }
+                }else{$vhdReason='The ext4.vhdx file was not present at the reliably discovered registration path.'}
                 break
             }
         }
@@ -143,7 +168,7 @@ function Get-WslDistroDetails {
             if($row -match '^\s*(\d+)\s+(\d+)\s+(\d+)\s+(\d+%)'){$linuxStorage=[pscustomobject]@{FilesystemBytes=[long]$Matches[1];UsedBytes=[long]$Matches[2];AvailableBytes=[long]$Matches[3];UsePercent=$Matches[4]}}
         }
     }
-    [pscustomobject]@{Name=$d.Name;Version=$d.Version;State=$d.State;IsDefault=$d.IsDefault;IsProtected=$d.IsProtected;ProtectionBasis=if($d.IsProtected){'Known system-managed distribution name'}else{'No known protected-name match; WSL does not expose a protected flag'};InstallationPath=$location;VirtualDisk=$vhd;LinuxFilesystem=$linuxStorage;WslConf=$wslConf}
+    [pscustomobject]@{Name=$d.Name;Version=$d.Version;State=$d.State;IsDefault=$d.IsDefault;IsProtected=$d.IsProtected;ProtectionBasis=if($d.IsProtected){'Known system-managed distribution name'}else{'No known protected-name match; WSL does not expose a protected flag'};InstallationPath=$location;VirtualDisk=$vhd;VirtualDiskUnavailableReason=$vhdReason;HostVolume=$hostVolume;HostVolumeUnavailableReason=$hostVolumeReason;LinuxFilesystem=$linuxStorage;WslConf=$wslConf}
 }
 
 function Write-OperationLog {
@@ -177,7 +202,9 @@ function Get-ManagerDiagnostics {
     if($cap.Available){try{$d=@(Get-WslDistributions | ForEach-Object { Get-WslDistroDetails $_.Name })}catch{$discoveryError=$_.Exception.Message}}
     $drives=Get-PSDrive -PSProvider FileSystem | ForEach-Object { [pscustomobject]@{Name=$_.Name;Root=$_.Root;FreeBytes=$_.Free;UsedBytes=$_.Used} }
     $globalConfig=Join-Path $HOME '.wslconfig'
-    [pscustomobject]@{ApplicationVersion='1.0.0';Computer=$env:COMPUTERNAME;Windows=[Environment]::OSVersion.Version.ToString();PowerShell=$PSVersionTable.PSVersion.ToString();Capabilities=$cap;Distributions=$d;DistributionDiscoveryError=$discoveryError;Volumes=@($drives);WslConfig=if(Test-Path -LiteralPath $globalConfig){[pscustomobject]@{Path=$globalConfig;Content=(Get-Content -LiteralPath $globalConfig -Raw)}}else{$null};GeneratedAt=(Get-Date).ToUniversalTime().ToString('o')}
+    $wslConfig=$null
+    if(Test-Path -LiteralPath $globalConfig -PathType Leaf){$wslConfig=[pscustomobject]@{Path=$globalConfig;Content=[IO.File]::ReadAllText($globalConfig)}}
+    [pscustomobject]@{ApplicationVersion='1.0.0';Computer=$env:COMPUTERNAME;Windows=[Environment]::OSVersion.Version.ToString();PowerShell=$PSVersionTable.PSVersion.ToString();Capabilities=$cap;Distributions=$d;DistributionDiscoveryError=$discoveryError;Volumes=@($drives);WslConfig=$wslConfig;GeneratedAt=(Get-Date).ToUniversalTime().ToString('o')}
 }
 
 function Get-BackupFileName {
@@ -246,12 +273,14 @@ function Invoke-DistributionAction {
     [CmdletBinding(SupportsShouldProcess,ConfirmImpact='Medium')]
     param([ValidateSet('Start','Terminate','SetDefault','Convert','Unregister')][string]$Action,[Parameter(Mandatory)][string]$Name,[int]$Version)
     $d=Get-WslDistro $Name
-    if($Action -eq 'Unregister' -and $d.IsProtected){throw 'Protected system-managed distributions cannot be unregistered by WSL Manager.'}
+    Assert-WslDistroOperationAllowed -Distribution $d -Operation $Action
     if($Action -eq 'Convert' -and $Version -notin 1,2){throw 'Conversion requires -Version 1 or -Version 2.'}
     if($Action -eq 'Convert' -and $d.Version -eq $Version){throw "Distribution is already WSL $Version."}
+    if($Action -eq 'Convert' -and -not (Get-WslCapabilities).SupportsSetVersion){throw 'Installed WSL does not advertise `wsl --set-version`; conversion is unsupported.'}
     $description=switch($Action){Start{'Start distribution'} Terminate{'Terminate selected distribution'} SetDefault{'Set default distribution'} Convert{"Convert to WSL $Version"} Unregister{'PERMANENTLY unregister and delete all distribution data'}}
     if(-not $PSCmdlet.ShouldProcess($Name,$description)){return}
     if($Action -eq 'Unregister') {
+        # Exact-name confirmation remains mandatory; -Force must never bypass this destructive-action gate.
         if(-not $PSCmdlet.ShouldContinue("This permanently deletes all data for '$Name'. A verified backup is strongly recommended. Continue to the name check?",'Destructive operation')){return}
         $typed=Read-Host "Type $Name exactly to permanently unregister it"
         if($typed -cne $Name){throw 'Typed distribution name did not match; unregister cancelled.'}
@@ -270,7 +299,7 @@ function Invoke-DistributionAction {
 function Move-WslDistribution {
     [CmdletBinding(SupportsShouldProcess,ConfirmImpact='High')]
     param([Parameter(Mandatory)][string]$Name,[Parameter(Mandatory)][string]$Destination)
-    $d=Get-WslDistro $Name; if($d.Version -ne 2){throw 'Native move is supported only for WSL 2 distributions.'}
+    $d=Get-WslDistro $Name; Assert-WslDistroOperationAllowed -Distribution $d -Operation 'Move'; if($d.Version -ne 2){throw 'Native move is supported only for WSL 2 distributions.'}
     $cap=Get-WslCapabilities; if(-not $cap.SupportsManageMove){throw 'Installed WSL does not advertise native `wsl --manage <distro> --move`; no fallback is attempted.'}
     $dest=[IO.Path]::GetFullPath($Destination); $destExists=Test-Path -LiteralPath $dest
     if($destExists -and (Get-ChildItem -LiteralPath $dest -Force | Measure-Object).Count){throw 'Destination exists and is not empty.'}
@@ -286,7 +315,7 @@ function Move-WslDistribution {
 function Copy-WslDistribution {
     [CmdletBinding(SupportsShouldProcess,ConfirmImpact='High')]
     param([Parameter(Mandatory)][string]$Name,[Parameter(Mandatory)][string]$NewName,[Parameter(Mandatory)][string]$Destination)
-    $source=Get-WslDistro $Name; if($source.IsProtected){throw 'Protected system-managed distributions cannot be cloned.'}
+    $source=Get-WslDistro $Name; Assert-WslDistroOperationAllowed -Distribution $source -Operation 'Clone'
     if(@(Get-WslDistributions|Where-Object {$_.Name -ceq $NewName}).Count){throw "Distribution already registered: $NewName"}
     $dest=[IO.Path]::GetFullPath($Destination); if(Test-Path -LiteralPath $dest){throw "Destination already exists: $dest"}
     if(-not $PSCmdlet.ShouldProcess($NewName,"Clone $Name to $dest")){return [pscustomobject]@{Planned=$true;Name=$NewName;Destination=$dest}}
@@ -310,7 +339,7 @@ function ConvertTo-SizeBytes {
 function Resize-WslDistribution {
     [CmdletBinding(SupportsShouldProcess,ConfirmImpact='High')]
     param([Parameter(Mandatory)][string]$Name,[Parameter(Mandatory)][string]$Size)
-    $d=Get-WslDistro $Name; if($d.Version -ne 2){throw 'Disk expansion is supported only for WSL 2 distributions.'}
+    $d=Get-WslDistro $Name; Assert-WslDistroOperationAllowed -Distribution $d -Operation 'Resize'; if($d.Version -ne 2){throw 'Disk expansion is supported only for WSL 2 distributions.'}
     $cap=Get-WslCapabilities; if(-not $cap.SupportsResize){throw 'Installed WSL does not advertise `wsl --manage --resize`.'}
     $details=Get-WslDistroDetails $Name; if(-not $details.VirtualDisk){throw 'A registered ext4.vhdx path could not be discovered; expansion is refused.'}
     if(-not (Get-Command Get-VHD -ErrorAction SilentlyContinue)){throw 'Safe preflight needs the read-only Get-VHD cmdlet to inspect the current virtual capacity. Install the Hyper-V PowerShell module; WSL Manager will not parse or edit VHDX files directly.'}

@@ -21,5 +21,8 @@ coverage/
 [Pp]S[Aa]nalysis*.xml
 .vscode/
 .idea/
+.vs/
+[Bb]in/
+[Oo]bj/
 Thumbs.db
 Desktop.ini

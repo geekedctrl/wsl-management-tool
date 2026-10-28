@@ -13,11 +13,15 @@ param(
     [switch]$Help
 )
 
+if ($env:WSL_MANAGER_UTF8_OUTPUT -eq '1') {
+    try { [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false) }
+    catch { Write-Verbose 'Could not set UTF-8 output encoding for the PowerShell host.' }
+}
 $ErrorActionPreference='Stop'
 Import-Module (Join-Path $PSScriptRoot 'src/Core/WSLManager.psm1') -Force
 
 function Write-Result($Value) {
-    if ($OutputFormat -eq 'Json') { $Value | ConvertTo-Json -Depth 12 }
+    if ($OutputFormat -eq 'Json') { ConvertTo-Json -InputObject $Value -Depth 12 }
     elseif ($Value -is [System.Collections.IEnumerable] -and $Value -isnot [string]) { $Value | Format-Table -AutoSize | Out-String | Write-Host }
     else { $Value | Format-List | Out-String | Write-Host }
 }
