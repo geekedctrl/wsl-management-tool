@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "WSLManager.Desktop (Package)": {
+      "commandName": "MsixPackage"
+    },
+    "WSLManager.Desktop (Unpackaged)": {
+      "commandName": "Project"
+    }
+  }
+}
