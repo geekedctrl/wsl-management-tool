@@ -50,8 +50,8 @@ Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription:
 Source: "{#PublishDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{autoprograms}\WSL Manager"; Filename: "{app}\WSLManager.Desktop.exe"; WorkingDir: "{app}"
-Name: "{autodesktop}\WSL Manager"; Filename: "{app}\WSLManager.Desktop.exe"; WorkingDir: "{app}"; Tasks: desktopicon
+Name: "{autoprograms}\WSL Manager"; Filename: "{app}\WSLManager.Desktop.exe"; WorkingDir: "{app}"; IconFilename: "{app}\WSLManager.Desktop.exe"
+Name: "{autodesktop}\WSL Manager"; Filename: "{app}\WSLManager.Desktop.exe"; WorkingDir: "{app}"; IconFilename: "{app}\WSLManager.Desktop.exe"; Tasks: desktopicon
 
 [Run]
 Filename: "{app}\WSLManager.Desktop.exe"; Description: "Launch WSL Manager"; Flags: postinstall nowait skipifsilent

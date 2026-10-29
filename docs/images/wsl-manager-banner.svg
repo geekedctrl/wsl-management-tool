@@ -29,9 +29,13 @@
   <path d="M0 440C280 370 430 500 720 423s490-123 880-10v107H0z" fill="url(#glow)" opacity=".8"/>
 
   <g transform="translate(88 86)">
-    <rect width="66" height="66" rx="18" fill="url(#accent)"/>
-    <path d="M15 23h36M15 33h28M15 43h36" fill="none" stroke="#071629" stroke-width="5" stroke-linecap="round"/>
-    <circle cx="49" cy="33" r="3" fill="#071629"/>
+    <rect width="66" height="66" rx="18" fill="#14243c" stroke="#31506d"/>
+    <rect x="10" y="18" width="9" height="9" rx="2.5" fill="#23c8ff"/>
+    <rect x="10" y="30" width="9" height="9" rx="2.5" fill="#23c8ff" opacity=".7"/>
+    <rect x="10" y="42" width="9" height="6" rx="2.5" fill="#23c8ff" opacity=".48"/>
+    <path d="M20 33h7" stroke="#55d5ff" stroke-width="2.5" stroke-linecap="round"/>
+    <rect x="27" y="15" width="29" height="38" rx="7" fill="#101b30" stroke="#72dcff" stroke-width="2"/>
+    <path d="M28 23h27m-19 8 6 5-6 5m9 1h5" fill="none" stroke="#f2f8ff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
   </g>
   <text x="174" y="121" fill="#f4f8ff" font-family="Segoe UI, Arial, sans-serif" font-size="24" font-weight="600" letter-spacing="2">WINDOWS SUBSYSTEM FOR LINUX</text>
   <text x="86" y="225" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif" font-size="70" font-weight="700" letter-spacing="-2">WSL Manager</text>
