@@ -94,6 +94,50 @@ public sealed class BackendTests
     }
 
     [Fact]
+    public void Distribution_names_resolve_to_brand_logos_with_generic_linux_fallback()
+    {
+        Assert.Equal("debian", new WSLManager.Desktop.Core.Models.DistributionSummary { Name = "Debian" }.LogoKey);
+        Assert.Equal("docker", new WSLManager.Desktop.Core.Models.DistributionSummary { Name = "docker-desktop" }.LogoKey);
+        Assert.Equal("ubuntu", new WSLManager.Desktop.Core.Models.DistributionSummary { Name = "Ubuntu-24.04" }.LogoKey);
+        Assert.Equal("kalilinux", new WSLManager.Desktop.Core.Models.DistributionSummary { Name = "kali-linux" }.LogoKey);
+        Assert.Equal("opensuse", new WSLManager.Desktop.Core.Models.DistributionSummary { Name = "openSUSE-Tumbleweed" }.LogoKey);
+        Assert.Equal("voidlinux", new WSLManager.Desktop.Core.Models.DistributionSummary { Name = "Void" }.LogoKey);
+        Assert.Equal("parrotsecurity", new WSLManager.Desktop.Core.Models.DistributionSummary { Name = "Parrot-security" }.LogoKey);
+        Assert.Equal("linux", new WSLManager.Desktop.Core.Models.DistributionSummary { Name = "Unknown-Test-Distro" }.LogoKey);
+        Assert.Equal("linux", new WSLManager.Desktop.Core.Models.DistributionSummary { Name = "March" }.LogoKey);
+    }
+
+    [Fact]
+    public void Online_catalog_search_matches_names_and_friendly_names_and_uses_friendly_brand_for_logo()
+    {
+        var catalog = new[]
+        {
+            new WSLManager.Desktop.Core.Models.OnlineDistribution("RLCPlus-9", "Rocky Linux Plus 9 (CIQ)"),
+            new WSLManager.Desktop.Core.Models.OnlineDistribution("Ubuntu-24.04", "Ubuntu 24.04 LTS")
+        };
+
+        Assert.Equal("rockylinux", catalog[0].LogoKey);
+        Assert.Single(WSLManager.Desktop.Core.Models.OnlineDistribution.Search(catalog, "rocky linux"));
+        Assert.Single(WSLManager.Desktop.Core.Models.OnlineDistribution.Search(catalog, "ubuntu-24.04"));
+        Assert.Equal(2, WSLManager.Desktop.Core.Models.OnlineDistribution.Search(catalog, "").Count);
+    }
+
+    [Fact]
+    public void Distribution_details_are_flattened_into_human_readable_rows_with_na_for_nulls()
+    {
+        using var json = JsonDocument.Parse("""{"Name":"Debian","Version":2,"VirtualDisk":{"Path":"K:\\WSL\\ext4.vhdx","SizeBytes":17900240896,"VirtualCapacityBytes":null},"IsDefault":true,"LinuxFilesystem":null}""");
+
+        var rows = DistributionDetailRows.Create(json.RootElement);
+
+        Assert.Contains(rows, row => row.Label == "Name" && row.Value == "Debian");
+        Assert.Contains(rows, row => row.Label == "Virtual Disk · Path" && row.Value == "K:\\WSL\\ext4.vhdx");
+        Assert.Contains(rows, row => row.Label == "Virtual Disk · Size Bytes" && row.Value == "16.67 GB");
+        Assert.Contains(rows, row => row.Label == "Virtual Disk · Virtual Capacity Bytes" && row.Value == "N/A");
+        Assert.Contains(rows, row => row.Label == "Is Default" && row.Value == "Yes");
+        Assert.Contains(rows, row => row.Label == "Linux Filesystem" && row.Value == "N/A");
+    }
+
+    [Fact]
     public void Distribution_parser_rejects_malformed_properties_for_ui_error_handling()
     {
         using var malformedJson = JsonDocument.Parse("""{"Name":"Debian","Version":"not-a-number"}""");
@@ -118,6 +162,8 @@ public sealed class BackendTests
             Assert.DoesNotContain("secret command value", output);
             Assert.Contains("command=[redacted]", output);
             Assert.Contains("memory=8GB", output);
+            await Assert.ThrowsAsync<IOException>(() => DiagnosticsExportService.WriteJsonAsync(path, "{}"));
+            Assert.Equal(output, await File.ReadAllTextAsync(path));
         }
         finally
         {
@@ -173,6 +219,20 @@ public sealed class BackendTests
         var args = BackendArgumentBuilder.Build(new BackendRequest { Action = "Terminate", Distro = "Debian" });
 
         Assert.Contains("-Confirm:$false", args);
+    }
+
+    [Fact]
+    public void Builder_routes_install_to_backend_with_new_name_location_and_confirmation_override()
+    {
+        var args = BackendArgumentBuilder.Build(new BackendRequest { Action = "Install", Distro = "Ubuntu-24.04", NewName = "Ubuntu-Work", Destination = @"D:\WSL Installs\Ubuntu 24.04" });
+
+        Assert.Contains("Ubuntu-24.04", args);
+        Assert.Contains("-NewName", args);
+        Assert.Contains("Ubuntu-Work", args);
+        Assert.Contains(@"D:\WSL Installs\Ubuntu 24.04", args);
+        Assert.Contains("-Confirm:$false", args);
+        Assert.True(ConfirmationPolicy.RequiresConfirmation("Install"));
+        Assert.Contains("Existing distributions will not be changed", ConfirmationPolicy.Describe("Install", "Ubuntu-24.04"));
     }
 
     [Fact]
@@ -280,6 +340,9 @@ public sealed class SettingsTests
 
         Assert.Equal(ThemePreference.System, settings.Theme);
         Assert.Equal(90, settings.LogRetentionDays);
+        Assert.Null(settings.DefaultExportDirectory);
+        Assert.Null(settings.DefaultBackupDirectory);
+        Assert.Null(settings.DefaultInstallDirectory);
     }
 
     [Fact]
@@ -290,11 +353,21 @@ public sealed class SettingsTests
         try
         {
             var store = new DesktopSettingsStore(path);
-            store.Save(new DesktopSettings { Theme = ThemePreference.Dark, LogRetentionDays = 9000 });
+            store.Save(new DesktopSettings
+            {
+                Theme = ThemePreference.Dark,
+                LogRetentionDays = 9000,
+                DefaultExportDirectory = Path.Combine(directory, "Exports"),
+                DefaultBackupDirectory = Path.Combine(directory, "Backups"),
+                DefaultInstallDirectory = Path.Combine(directory, "Distros")
+            });
             var loaded = store.Load();
 
             Assert.Equal(ThemePreference.Dark, loaded.Theme);
             Assert.Equal(3650, loaded.LogRetentionDays);
+            Assert.Equal(Path.GetFullPath(Path.Combine(directory, "Exports")), loaded.DefaultExportDirectory);
+            Assert.Equal(Path.GetFullPath(Path.Combine(directory, "Backups")), loaded.DefaultBackupDirectory);
+            Assert.Equal(Path.GetFullPath(Path.Combine(directory, "Distros")), loaded.DefaultInstallDirectory);
             Assert.True(File.Exists(path));
         }
         finally

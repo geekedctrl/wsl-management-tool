@@ -1,111 +1,132 @@
-# WSL Manager
+<div align="center">
+  <img src="docs/images/wsl-manager-mark.svg" width="84" height="84" alt="WSL Manager logo" />
+  <h1>WSL Manager</h1>
+  <p><strong>Manage Windows Subsystem for Linux from one clear, safety-focused workspace.</strong></p>
+  <p>
+    <a href="https://github.com/geekedctrl/wsl-management-tool/releases"><img alt="Download preview" src="https://img.shields.io/badge/Download-Windows%20preview-168bd2?style=for-the-badge&logo=windows" /></a>
+    <img alt="Development preview" src="https://img.shields.io/badge/status-development%20preview-e9a23b?style=for-the-badge" />
+    <img alt="MIT license" src="https://img.shields.io/badge/license-MIT-4b9b74?style=for-the-badge" />
+  </p>
+</div>
 
-> **Development preview — not production-validated.** Version 1.0.0 has been checked with automated unit tests and local read-only/CLI validation. Live WSL backup, restore, move, and clone integration workflows have not been completed. Treat data-changing features as preview software and maintain independent backups.
+<p align="center">
+  <img src="docs/images/wsl-manager-banner.svg" alt="WSL Manager desktop interface illustration" width="100%" />
+</p>
 
-WSL Manager includes a PowerShell 5.1+ command-line/terminal menu and a native WinUI 3 desktop client for inspecting and managing Windows Subsystem for Linux distributions. Version 1.0.0 focuses on explicit operations, refusal to overwrite, and clear reporting when WSL does not advertise a capability.
+> **Development preview — not production-validated.** Automated unit tests and read-only local checks pass, but live WSL install, backup, restore, move, and clone workflows have not been completed in an isolated test environment. Keep independent backups and review every operation before confirming it.
 
-## Supported environment
+## Download for Windows
 
-- The PowerShell CLI is intended for Windows 10/11 with a supported WSL installation. It was locally validated on Windows 11 build 26200, WSL 2.6.3.0, PowerShell 7.6.7, and Windows PowerShell 5.1.26100.8115.
-- The desktop preview targets Windows 10 build 17763 or later through the Windows App SDK. .NET 10 support on Windows 10 is limited to supported LTSC/Enterprise editions; Windows 10 runtime behavior has not been tested. The desktop app was only run on Windows 11 in the current validation environment. See Microsoft's [.NET on Windows support table](https://learn.microsoft.com/dotnet/core/install/windows) and [Windows App SDK support matrix](https://learn.microsoft.com/windows/apps/windows-app-sdk/support).
-- Normal use has no third-party runtime dependencies. Pester is used for development tests.
-- WSL 1 and WSL 2 can be listed, started, terminated, and converted subject to WSL support. VHDX export is WSL 2 only.
+Download the **WSL Manager Setup x64** `.exe` from the [GitHub Releases page](https://github.com/geekedctrl/wsl-management-tool/releases). The per-user installer includes the desktop app, its PowerShell backend, and the .NET/Windows App SDK runtime. It does not install WSL or require administrator access.
 
-## Install and start
+The preview installer is currently unsigned. Windows may show an unknown-publisher or SmartScreen warning. Review the release notes and SHA-256 checksum before running it. Updates are installed manually from Releases.
 
-Download or clone the repository, then run in PowerShell:
+For source, build instructions, and the PowerShell CLI, continue below. To install from a source checkout, see [Installation](docs/Installation.md).
+
+## What it can do
+
+- **Manage distributions:** list, inspect, start, terminate, set default, and convert when WSL supports the requested operation.
+- **Add distributions:** search Microsoft's online catalog or import a local TAR/VHDX archive. When WSL advertises custom install names, install the same catalog image as another named registration, such as `Debian-Work`.
+- **Back up and restore:** export selected distributions to TAR or supported VHDX, keep a checksum and manifest, and restore as a new registration.
+- **Move and clone:** use native WSL move support when available; clone to a separate name and location while preserving the source.
+- **Inspect storage and diagnostics:** view discoverable disk, filesystem, host-volume, WSL, and configuration information.
+- **Save defaults:** configure separate per-user folders for diagnostics exports, WSL backups, and new distribution installations.
+
+The desktop app is a native WinUI 3 client. The PowerShell terminal menu and CLI remain available and share the same backend services.
+
+## Quick start
+
+### Desktop app
+
+1. Download the x64 Setup `.exe` from [Releases](https://github.com/geekedctrl/wsl-management-tool/releases).
+2. Run Setup. It installs for the current Windows user and adds WSL Manager to the Start menu.
+3. Open WSL Manager and use **Settings** to choose default export, backup, and installation folders.
+
+WSL is required for distribution operations. The app will still open and show diagnostics if WSL is unavailable.
+
+### PowerShell CLI
+
+From a repository checkout, open PowerShell 5.1 or PowerShell 7 in the project directory:
 
 ```powershell
 Set-ExecutionPolicy -Scope Process Bypass
 ./WSL-Manager.ps1
 ```
 
-No administrator session is required for normal operations. Windows execution policy is changed only for the current PowerShell process by the example above.
-
-### WinUI desktop preview
-
-The native desktop client is development/preview software and has not been validated with live data-changing workflows. Its navigation covers distribution management, backup and restore, move and clone, storage, diagnostics, operation history, and settings. It adapts its card layout to the window width and uses the same PowerShell services as the CLI.
-
-The unpackaged app requires the .NET 10 Desktop Runtime and Windows App SDK 2.5.1 runtime. PowerShell 7 is preferred; Windows PowerShell 5.1 is used as a fallback. WSL itself is optional for launching the app, but distribution features require a working WSL installation. The app does not install runtime prerequisites, enable Windows features, or elevate itself.
-
-**Preview limitations:** live backup/export, restore, move, clone, conversion, and disk-expansion integration workflows have not been completed. Do not treat the app as production-validated or use it as the only protection for important data. Existing distributions are never automatically overwritten; destructive or disruptive operations require explicit confirmation and protected/system-managed distributions are refused. See [Safety](docs/Safety.md) and [Compatibility](docs/Compatibility.md) before use.
-
-To build and run from a source checkout with the .NET 10 SDK:
-
-```powershell
-dotnet build WSLManager.Desktop.sln -p:Platform=x64
-dotnet run --project src/WSLManager.Desktop/WSLManager.Desktop.csproj -p:Platform=x64
-```
-
-Install the .NET 10 Desktop Runtime and Windows App SDK 2.5.1 runtime before running the unpackaged build on another machine. The app and bundled backend are copied to the build output; no MSI/MSIX package is produced by these commands. See [docs/Installation.md](docs/Installation.md) for details.
-
-## Quick start
+Run a direct command instead of the terminal menu with `-Action`:
 
 ```powershell
 ./WSL-Manager.ps1 -Action List
 ./WSL-Manager.ps1 -Action Info -Distro Debian
 ./WSL-Manager.ps1 -Action Diagnose -OutputFormat Json
+./WSL-Manager.ps1 -Action Install -Distro Debian -NewName Debian-Work -Destination 'D:\WSL\Debian-Work' -WhatIf
 ./WSL-Manager.ps1 -Action Backup -Distro Debian -Destination 'D:\Backups' -Format Tar
-./WSL-Manager.ps1 -Action Backup -Distro Debian,Ubuntu -Destination 'D:\Backups' -Format Tar
-./WSL-Manager.ps1 -Action Restore -Source 'D:\Backups\Debian_20261022_120000_ab12cd34.tar' -Distro Debian-Restored -Destination 'D:\WSL\Debian-Restored'
+./WSL-Manager.ps1 -Action Restore -Source 'D:\Backups\Debian.tar' -Distro Debian-Restored -Destination 'D:\WSL\Debian-Restored'
 ./WSL-Manager.ps1 -Action Clone -Distro Debian -NewName Debian-Test -Destination 'D:\WSL\Debian-Test'
-./WSL-Manager.ps1 -Action Move -Distro Debian -Destination 'D:\WSL\Debian'
-./WSL-Manager.ps1 -Action Disk -Distro Debian -OutputFormat Json
-./WSL-Manager.ps1 -Action Resize -Distro Debian -Size 128GB -WhatIf
 ```
 
-Use `-WhatIf` to preview supported modifications. Use `-Confirm` to request PowerShell confirmation. `-Force` is accepted for script compatibility and deliberately never bypasses safeguards. Unregister requires confirmation and exact name typing.
-
-To rename a distribution safely, clone it under the new name, verify the clone, switch your work to it, then explicitly unregister the old distribution as a separate operation if desired.
-
-## Menus and commands
-
-Run without `-Action` for the numbered terminal menu. The complete parameter reference, caveats, and exit codes are in [docs/Commands.md](docs/Commands.md). Implementation boundaries are documented in [docs/Architecture.md](docs/Architecture.md), [docs/Safety.md](docs/Safety.md), [docs/Compatibility.md](docs/Compatibility.md), and [docs/Troubleshooting.md](docs/Troubleshooting.md).
-
-The menu is keyboard-only and uses text labels. Some operations ask for confirmation or a distribution name. Ctrl+C exits through PowerShell's normal cancellation behavior.
-
-```text
-WSL MANAGER v1.0
-----------------
-Name           Version State   IsDefault IsProtected
-Debian         2       Running True      False
-docker-desktop 2       Running False     True
-
-1. Distribution Manager
-2. Backup & Restore
-3. Move & Clone
-4. Disk Management
-5. WSL Configuration
-6. Diagnostics & Reports
-7. Settings & Logs
-0. Exit
-Select:
-```
+See the complete [command reference](docs/Commands.md) for parameters, examples, and exit codes.
 
 ## Safety
 
-Unregister permanently deletes a distribution. Backup exports can interrupt consistency-sensitive workloads; WSL Manager does not stop a running distribution automatically before export. Backups record process completion, file checks, and SHA-256, but do not claim restorable status until a test restoration succeeds. See [docs/Safety.md](docs/Safety.md).
+- Existing distributions and destination folders are never overwritten automatically.
+- Unregister permanently deletes a distribution and requires extra confirmation plus exact-name typing.
+- Backups do not stop a running distribution automatically and are not claimed restorable until a test restore succeeds.
+- Move uses native WSL support only; the app does not fall back to unregister/import migration.
+- `-WhatIf` previews supported CLI modifications. `-Force` never bypasses safety checks.
+- WSL Manager does not run `wsl --shutdown`, enable Windows features, modify global WSL configuration, or elevate itself automatically.
 
-The application does not infer installation paths from registry assumptions, does not fall back from native move to destructive migration, and does not run `wsl --shutdown`.
+Read [Safety](docs/Safety.md) and [Compatibility](docs/Compatibility.md) before using data-changing features.
+
+## Compatibility
+
+- **PowerShell CLI:** Windows 10 and Windows 11 with a supported WSL installation; PowerShell 5.1 or PowerShell 7.
+- **Desktop preview:** tested on Windows 11 x64. It targets .NET 10 and Windows App SDK 2.5.1. Windows 10 runtime behavior has not been verified; .NET 10 support on Windows 10 is limited to supported LTSC/Enterprise editions.
+- WSL capabilities vary by installed release. Unsupported commands are reported instead of simulated.
+- No third-party runtime dependencies are required by the CLI. The installer includes the desktop runtime; WSL remains a separate Microsoft prerequisite.
+
+See the official [.NET on Windows support table](https://learn.microsoft.com/dotnet/core/install/windows), [Windows App SDK support matrix](https://learn.microsoft.com/windows/apps/windows-app-sdk/support), and [WSL command reference](https://learn.microsoft.com/windows/wsl/basic-commands).
+
+## Build from source
+
+The CLI runs directly in PowerShell. To build and launch the desktop app, install the .NET 10 SDK and use:
+
+```powershell
+dotnet restore WSLManager.Desktop.sln -p:Platform=x64
+dotnet build WSLManager.Desktop.sln -p:Platform=x64
+dotnet run --project src/WSLManager.Desktop/WSLManager.Desktop.csproj -p:Platform=x64
+```
+
+To build the self-contained per-user Setup `.exe`, install Inno Setup 7, then run:
+
+```powershell
+./scripts/Build-Installer.ps1
+```
+
+The setup file is written to `artifacts/installer/`. Build details and runtime notes are in [Installation](docs/Installation.md).
 
 ## Development
+
+Run the PowerShell unit suite and desktop core tests:
 
 ```powershell
 Install-Module Pester -Scope CurrentUser
 Invoke-Pester ./tests/Unit
+dotnet test tests/WSLManager.Desktop.Core.Tests/WSLManager.Desktop.Core.Tests.csproj -p:Platform=x64
 ```
 
-For the desktop core unit tests, build and test the solution with the .NET 10 SDK:
+Live data-changing WSL integration tests must use isolated, positively identified disposable distributions. See [Contributing](CONTRIBUTING.md) and [the integration test policy](tests/Integration/README.md).
 
-```powershell
-dotnet build WSLManager.Desktop.sln -p:Platform=x64
-dotnet test tests/WSLManager.Desktop.Core.Tests/WSLManager.Desktop.Core.Tests.csproj
-```
+## Project documents
 
-GitHub Actions runs the PowerShell unit suite and builds/tests the desktop solution on Windows.
-
-See [CONTRIBUTING.md](CONTRIBUTING.md). Integration test policy and current skip rationale are in [tests/Integration/README.md](tests/Integration/README.md).
+- [Installation](docs/Installation.md)
+- [Commands](docs/Commands.md)
+- [Architecture](docs/Architecture.md)
+- [Safety](docs/Safety.md)
+- [Compatibility](docs/Compatibility.md)
+- [Troubleshooting](docs/Troubleshooting.md)
+- [Changelog](CHANGELOG.md)
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+WSL Manager is released under the [MIT License](LICENSE). Some bundled distribution logos have separate usage terms; see [their attribution notes](src/WSLManager.Desktop/Assets/DistributionLogos/README.md).

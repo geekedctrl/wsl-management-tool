@@ -24,5 +24,6 @@ coverage/
 .vs/
 [Bb]in/
 [Oo]bj/
+artifacts/
 Thumbs.db
 Desktop.ini

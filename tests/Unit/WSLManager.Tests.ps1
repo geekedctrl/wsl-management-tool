@@ -19,7 +19,7 @@ Describe 'WSL Manager adapter and discovery' {
             $line = $arguments -join ' '
             if($line -eq '--list --verbose') { return [pscustomobject]@{ExitCode=0;StdOut="  NAME                   STATE           VERSION`n* Debian                 Running         2`n  Ubuntu-24.04           Stopped         2`n  Legacy                 Stopped         1`n  docker-desktop         Running         2";StdErr=''} }
             if($line -eq '--version') { return [pscustomobject]@{ExitCode=0;StdOut='WSL version: 2.6.3.0';StdErr=''} }
-            if($line -eq '--help') { return [pscustomobject]@{ExitCode=0;StdOut='--vhd --import-in-place --set-version --manage --resize';StdErr=''} }
+            if($line -eq '--help') { return [pscustomobject]@{ExitCode=0;StdOut="--vhd --import-in-place --set-version --manage --resize`n--install [Distro] [Options...]`n  --name <Name>`n  --location <Location>`n  --no-launch`n--mount <Disk>`n  --name <MountName>";StdErr=''} }
             if($line -eq '--status') { return [pscustomobject]@{ExitCode=0;StdOut='Default Distribution: Debian';StdErr=''} }
             return [pscustomobject]@{ExitCode=0;StdOut='';StdErr=''}
         }
@@ -39,6 +39,79 @@ Describe 'WSL Manager adapter and discovery' {
         Assert-Equal $c.SupportsManage $true 'Manage capability'
         Assert-Equal $c.SupportsImportInPlace $true 'Import-in-place capability'
         Assert-Equal $c.SupportsSetVersion $true 'Set-version capability'
+        Assert-Equal $c.SupportsInstallName $true 'Install registration-name capability'
+    }
+
+    It 'parses online distribution IDs and friendly names without matching the header' {
+        Set-WslCommandExecutor { param($a,$f) if(($a -join ' ') -eq '--list --online'){return [pscustomobject]@{ExitCode=0;StdOut="NAME                 FRIENDLY NAME`nUbuntu               Ubuntu`nUbuntu-24.04         Ubuntu 24.04 LTS`nopenSUSE-Leap-16.0    openSUSE Leap 16.0";StdErr=''}};[pscustomobject]@{ExitCode=0;StdOut='';StdErr=''} }
+        $items=@(Get-WslOnlineDistributions)
+        Assert-Equal $items.Count 3 'Online distribution count'
+        Assert-Equal $items[1].Name 'Ubuntu-24.04' 'Online install ID'
+        Assert-Equal $items[1].FriendlyName 'Ubuntu 24.04 LTS' 'Friendly name'
+    }
+
+    It 'previews install without invoking a WSL install command and refuses duplicate names' {
+        $script:installArguments=$null
+        Set-WslCommandExecutor {
+            param($a,$f)
+            $line=$a -join ' '
+            if($line -eq '--list --verbose'){return [pscustomobject]@{ExitCode=0;StdOut='* Debian  Running 2';StdErr=''}}
+            if($line -eq '--version'){return [pscustomobject]@{ExitCode=0;StdOut='WSL version: 2.6.3.0';StdErr=''}}
+            if($line -eq '--help'){return [pscustomobject]@{ExitCode=0;StdOut="--install [Distro]`n  --name <Name>`n  --location <Location>`n  --no-launch`n--manage <Distro>";StdErr=''}}
+            if($line -eq '--status'){return [pscustomobject]@{ExitCode=0;StdOut='';StdErr=''}}
+            if($line -eq '--list --online'){return [pscustomobject]@{ExitCode=0;StdOut="NAME    FRIENDLY NAME`nArch    Arch Linux`nDebian  Debian GNU/Linux";StdErr=''}}
+            if($line -like '--install *'){$script:installArguments=$a}
+            return [pscustomobject]@{ExitCode=0;StdOut='';StdErr=''}
+        }
+        $planned=Install-WslDistribution -Name Arch -Destination (Join-Path $TestDrive 'New distro path') -WhatIf
+        Assert-Equal $planned.Planned $true 'Install WhatIf plan'
+        Assert-Equal ($null -eq $script:installArguments) $true 'No install command in WhatIf'
+        Assert-Equal (Test-Throws { Install-WslDistribution -Name Debian -WhatIf }) $true 'Duplicate distribution refusal'
+    }
+
+    It 'installs an online image under a distinct registration name and location through mocked WSL' {
+        $script:installArguments=$null
+        $script:registeredNames=@('Debian')
+        Set-WslCommandExecutor {
+            param($a,$f)
+            $line=$a -join ' '
+            if($line -eq '--version'){return [pscustomobject]@{ExitCode=0;StdOut='WSL version: 2.6.3.0';StdErr=''}}
+            if($line -eq '--help'){return [pscustomobject]@{ExitCode=0;StdOut="--install [Distro]`n  --name <Name>`n  --location <Location>`n  --no-launch`n--manage <Distro>";StdErr=''}}
+            if($line -eq '--status'){return [pscustomobject]@{ExitCode=0;StdOut='';StdErr=''}}
+            if($line -eq '--list --online'){return [pscustomobject]@{ExitCode=0;StdOut="NAME    FRIENDLY NAME`nDebian  Debian GNU/Linux";StdErr=''}}
+            if($line -eq '--list --verbose'){
+                $rows=@('  NAME          STATE    VERSION')
+                foreach($registered in $script:registeredNames){$rows+=('  {0}  Stopped  2' -f $registered)}
+                return [pscustomobject]@{ExitCode=0;StdOut=($rows -join "`n");StdErr=''}
+            }
+            if($a[0] -eq '--install'){
+                $script:installArguments=$a
+                $nameIndex=[array]::IndexOf($a,'--name')
+                if($nameIndex -ge 0){$script:registeredNames+= $a[$nameIndex+1]}else{$script:registeredNames+=$a[2]}
+            }
+            return [pscustomobject]@{ExitCode=0;StdOut='';StdErr=''}
+        }
+        $destination=Join-Path $TestDrive 'Debian Work'
+        $result=Install-WslDistribution -Name Debian -NewName Debian-Work -Destination $destination -Confirm:$false
+        Assert-Equal $result.Name 'Debian-Work' 'New registration name'
+        Assert-Equal $script:installArguments[1] '--distribution' 'Install source option'
+        Assert-Equal $script:installArguments[2] 'Debian' 'Install catalog ID'
+        Assert-Equal $script:installArguments[3] '--name' 'Custom registration option'
+        Assert-Equal $script:installArguments[4] 'Debian-Work' 'Custom registration name'
+        Assert-Equal ($script:installArguments -contains '--no-launch') $true 'Deferred first launch'
+        Assert-Equal ($script:installArguments -contains $destination) $true 'Custom installation location'
+    }
+
+    It 'refuses custom registration names when WSL does not advertise --name' {
+        Set-WslCommandExecutor {
+            param($a,$f)
+            $line=$a -join ' '
+            if($line -eq '--version'){return [pscustomobject]@{ExitCode=0;StdOut='WSL version: 2.6.3.0';StdErr=''}}
+            if($line -eq '--help'){return [pscustomobject]@{ExitCode=0;StdOut="--install [Distro]`n  --location <Location>`n  --no-launch`n--manage <Distro>`n--mount <Disk>`n  --name <MountName>";StdErr=''}}
+            if($line -eq '--list --verbose'){return [pscustomobject]@{ExitCode=0;StdOut='* Debian  Running 2';StdErr=''}}
+            return [pscustomobject]@{ExitCode=0;StdOut='';StdErr=''}
+        }
+        Assert-Equal (Test-Throws { Install-WslDistribution -Name Arch -NewName Arch-Work -WhatIf }) $true 'Unsupported custom registration name'
     }
 
     It 'loads and reports unavailable WSL cleanly when wsl.exe is absent from PATH' {

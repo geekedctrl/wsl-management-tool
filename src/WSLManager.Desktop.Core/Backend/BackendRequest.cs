@@ -20,7 +20,7 @@ public static class BackendArgumentBuilder
 {
     private static readonly HashSet<string> MutatingActions = new(StringComparer.OrdinalIgnoreCase)
     {
-        "Start", "Terminate", "SetDefault", "Convert", "Backup", "Restore", "Move", "Clone", "Resize"
+        "Start", "Terminate", "SetDefault", "Convert", "Backup", "Restore", "Move", "Clone", "Resize", "Install"
     };
 
     public static IReadOnlyList<string> Build(BackendRequest request)

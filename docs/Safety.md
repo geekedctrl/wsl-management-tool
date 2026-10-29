@@ -5,6 +5,7 @@
 - Protected container distributions cannot be unregistered or cloned.
 - Unregister uses `ShouldProcess`, an additional confirmation, and exact-name typing. `-Force` cannot bypass these checks.
 - Restore refuses existing names and destination directories. Backup names are unique and exports stage to `.partial` before finalization.
+- Online installation may reuse a catalog image under a distinct registration name only when WSL advertises `--name`; an already-registered name is always rejected. Configured install roots produce a new child folder, and existing destination data is never reused.
 - Backup manifests distinguish command completion and output/hash checks from restoration; `TestRestoreSucceeded` stays false.
 - No selected distro is automatically terminated for backup; no global WSL shutdown is used.
 - Move requires an advertised native command. No export/unregister/import fallback is attempted.
