@@ -17,6 +17,10 @@ public static class DiagnosticsExportService
         var redacted = DiagnosticsRedactor.Redact(diagnosticsJson, userProfile, localAppData);
         using var parsed = JsonDocument.Parse(redacted);
         var formatted = JsonSerializer.Serialize(parsed.RootElement, new JsonSerializerOptions { WriteIndented = true });
-        await File.WriteAllTextAsync(path, formatted, cancellationToken).ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
+        using var stream = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+        using var writer = new StreamWriter(stream);
+        await writer.WriteAsync(formatted.AsMemory(), cancellationToken).ConfigureAwait(false);
+        await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
     }
 }

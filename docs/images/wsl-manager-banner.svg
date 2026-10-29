@@ -1,0 +1,84 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="520" viewBox="0 0 1600 520" role="img" aria-labelledby="title description">
+  <title id="title">WSL Manager</title>
+  <desc id="description">A Windows desktop app for inspecting and managing Windows Subsystem for Linux distributions.</desc>
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#101a2d"/>
+      <stop offset="0.58" stop-color="#142846"/>
+      <stop offset="1" stop-color="#0e1728"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#62d4ff"/>
+      <stop offset="1" stop-color="#2586ff"/>
+    </linearGradient>
+    <linearGradient id="glow" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#328cff" stop-opacity="0"/>
+      <stop offset="0.5" stop-color="#328cff" stop-opacity=".3"/>
+      <stop offset="1" stop-color="#39c7ff" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="160%">
+      <feDropShadow dx="0" dy="20" stdDeviation="22" flood-color="#050b16" flood-opacity=".45"/>
+    </filter>
+    <pattern id="dots" width="28" height="28" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="1.4" fill="#a9d5ff" opacity=".15"/>
+    </pattern>
+  </defs>
+  <rect width="1600" height="520" rx="32" fill="url(#background)"/>
+  <rect width="1600" height="520" rx="32" fill="url(#dots)" opacity=".45"/>
+  <ellipse cx="480" cy="-10" rx="580" ry="320" fill="#1878ed" opacity=".08"/>
+  <path d="M0 440C280 370 430 500 720 423s490-123 880-10v107H0z" fill="url(#glow)" opacity=".8"/>
+
+  <g transform="translate(88 86)">
+    <rect width="66" height="66" rx="18" fill="url(#accent)"/>
+    <path d="M15 23h36M15 33h28M15 43h36" fill="none" stroke="#071629" stroke-width="5" stroke-linecap="round"/>
+    <circle cx="49" cy="33" r="3" fill="#071629"/>
+  </g>
+  <text x="174" y="121" fill="#f4f8ff" font-family="Segoe UI, Arial, sans-serif" font-size="24" font-weight="600" letter-spacing="2">WINDOWS SUBSYSTEM FOR LINUX</text>
+  <text x="86" y="225" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif" font-size="70" font-weight="700" letter-spacing="-2">WSL Manager</text>
+  <text x="90" y="279" fill="#c5d5ea" font-family="Segoe UI, Arial, sans-serif" font-size="25">A clearer way to manage your Linux distributions.</text>
+  <g transform="translate(90 322)">
+    <rect width="158" height="40" rx="20" fill="#193451" stroke="#3d668e"/>
+    <circle cx="21" cy="20" r="5" fill="#63d3ff"/>
+    <text x="37" y="26" fill="#d7e8fb" font-family="Segoe UI, Arial, sans-serif" font-size="15" font-weight="600" letter-spacing="1">DEVELOPMENT PREVIEW</text>
+  </g>
+  <text x="90" y="412" fill="#91abc8" font-family="Segoe UI, Arial, sans-serif" font-size="17">Windows desktop · PowerShell CLI · Shared safety-focused backend</text>
+
+  <g transform="translate(765 54)" filter="url(#shadow)">
+    <rect width="755" height="420" rx="20" fill="#111a28" stroke="#45617d" stroke-opacity=".75"/>
+    <path d="M20 0h715a20 20 0 0 1 20 20v37H0V20A20 20 0 0 1 20 0" fill="#1a2637"/>
+    <circle cx="25" cy="28" r="5" fill="#ff6b6b"/>
+    <circle cx="45" cy="28" r="5" fill="#ffc857"/>
+    <circle cx="65" cy="28" r="5" fill="#59d39a"/>
+    <text x="95" y="34" fill="#c8d7e8" font-family="Segoe UI, Arial, sans-serif" font-size="14">WSL Manager</text>
+    <rect x="0" y="57" width="172" height="363" fill="#141f2e"/>
+    <rect x="18" y="82" width="136" height="35" rx="9" fill="#203852"/>
+    <rect x="31" y="94" width="13" height="13" rx="3" fill="#55c8ff"/>
+    <text x="55" y="105" fill="#e4f3ff" font-family="Segoe UI, Arial, sans-serif" font-size="14" font-weight="600">Distributions</text>
+    <g fill="#96abc2" font-family="Segoe UI, Arial, sans-serif" font-size="14">
+      <text x="55" y="151">Backup &amp; Restore</text>
+      <text x="55" y="193">Move &amp; Clone</text>
+      <text x="55" y="235">Storage</text>
+      <text x="55" y="277">Diagnostics</text>
+    </g>
+    <g fill="#7088a2">
+      <rect x="31" y="140" width="13" height="13" rx="3"/><rect x="31" y="182" width="13" height="13" rx="3"/>
+      <rect x="31" y="224" width="13" height="13" rx="3"/><rect x="31" y="266" width="13" height="13" rx="3"/>
+    </g>
+    <text x="204" y="96" fill="#f2f7ff" font-family="Segoe UI, Arial, sans-serif" font-size="25" font-weight="650">Registered distributions</text>
+    <text x="204" y="123" fill="#91a8c1" font-family="Segoe UI, Arial, sans-serif" font-size="13">Inspect status, storage, and available actions.</text>
+    <g>
+      <rect x="202" y="147" width="525" height="91" rx="12" fill="#1b2a3c" stroke="#31506d"/>
+      <rect x="218" y="164" width="56" height="56" rx="14" fill="#d83d53"/>
+      <text x="230" y="199" fill="#fff" font-family="Segoe UI, Arial, sans-serif" font-size="22" font-weight="700">D</text>
+      <text x="292" y="181" fill="#eff6ff" font-family="Segoe UI, Arial, sans-serif" font-size="17" font-weight="600">Debian</text>
+      <text x="292" y="205" fill="#afc1d5" font-family="Segoe UI, Arial, sans-serif" font-size="14">WSL 2 · Stopped · Default</text>
+      <rect x="202" y="252" width="525" height="76" rx="12" fill="#172536" stroke="#263c53"/>
+      <rect x="218" y="263" width="52" height="52" rx="13" fill="#3767c8"/>
+      <text x="228" y="295" fill="#fff" font-family="Segoe UI, Arial, sans-serif" font-size="18" font-weight="700">U</text>
+      <text x="292" y="282" fill="#eff6ff" font-family="Segoe UI, Arial, sans-serif" font-size="17" font-weight="600">Ubuntu-24.04</text>
+      <text x="292" y="306" fill="#afc1d5" font-family="Segoe UI, Arial, sans-serif" font-size="14">WSL 2 · Running</text>
+    </g>
+    <rect x="202" y="351" width="168" height="40" rx="9" fill="url(#accent)"/>
+    <text x="225" y="377" fill="#071629" font-family="Segoe UI, Arial, sans-serif" font-size="14" font-weight="700">+  Add distribution</text>
+  </g>
+</svg>

@@ -1,7 +1,9 @@
 using System.Collections.ObjectModel;
 using System.Text.Json;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Automation.Peers;
 using Microsoft.UI.Xaml.Navigation;
 using Windows.Storage.Pickers;
 using WSLManager.Desktop.Core.Backend;
@@ -14,13 +16,20 @@ public sealed partial class MainPage : Page
 {
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true, WriteIndented = true };
     private readonly ObservableCollection<DistributionSummary> _distributions = [];
+    private readonly ObservableCollection<DistributionDetailRow> _detailRows = [];
     private readonly OperationState _operationState = new();
     private bool _initializing = true;
+    private string? _autoRestoreDestination;
+    private string? _autoCloneDestination;
+    private string? _autoOnlineInstallDestination;
+    private string? _restoreFolderParent;
+    private string? _cloneFolderParent;
 
     public MainPage()
     {
         InitializeComponent();
         DistributionList.ItemsSource = _distributions;
+        DetailsTable.ItemsSource = _detailRows;
         BackupDistroList.ItemsSource = _distributions;
         MigrationDistro.ItemsSource = _distributions;
         MigrationDistro.DisplayMemberPath = nameof(DistributionSummary.Name);
@@ -28,6 +37,10 @@ public sealed partial class MainPage : Page
         StorageDistro.DisplayMemberPath = nameof(DistributionSummary.Name);
 
         RetentionDays.Text = App.Current.Settings.LogRetentionDays.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        DefaultExportDirectory.Text = App.Current.Settings.DefaultExportDirectory ?? string.Empty;
+        DefaultBackupDirectory.Text = App.Current.Settings.DefaultBackupDirectory ?? string.Empty;
+        DefaultInstallDirectory.Text = App.Current.Settings.DefaultInstallDirectory ?? string.Empty;
+        BackupDestination.Text = App.Current.Settings.DefaultBackupDirectory ?? string.Empty;
         ThemeChoice.SelectedIndex = (int)App.Current.Settings.Theme;
         ApplyTheme(App.Current.Settings.Theme);
         _initializing = false;
@@ -170,6 +183,7 @@ public sealed partial class MainPage : Page
         {
             SelectedDistroCard.Visibility = Visibility.Collapsed;
             DetailsHint.Visibility = Visibility.Visible;
+            _detailRows.Clear();
             return;
         }
         SelectedDistroCard.Visibility = Visibility.Visible;
@@ -180,10 +194,275 @@ public sealed partial class MainPage : Page
         try
         {
             using var document = await App.Current.Backend.InvokeAsync(new BackendRequest { Action = "Info", Distro = item.Name });
-            OperationOutput.Text = FormatJson(document.RootElement);
+            _detailRows.Clear();
+            foreach (var row in DistributionDetailRows.Create(document.RootElement)) _detailRows.Add(row);
+            OperationOutput.Text = string.Empty;
         }
-        catch (Exception ex) { OperationOutput.Text = SanitizeError(ex); }
+        catch (Exception ex) { _detailRows.Clear(); OperationOutput.Text = SanitizeError(ex); }
     }
+
+    private async void AddDistribution_Click(object sender, RoutedEventArgs e)
+    {
+        if (_operationState.IsBusy) { StatusText.Text = "Wait for the current operation to finish before adding a distribution."; return; }
+
+        var contentWidth = Math.Clamp(Content.XamlRoot.Size.Width - 80, 320, 440);
+        var content = new StackPanel { Spacing = 14, Width = contentWidth, HorizontalAlignment = HorizontalAlignment.Stretch };
+        var intro = new TextBlock { Text = "Install a new distro from Microsoft's current WSL catalog, or import a local TAR/VHDX archive. Both options create a new registration; existing distributions are left alone.", TextWrapping = TextWrapping.Wrap };
+        var onlineLabel = new TextBlock { Text = "Search WSL distributions", FontWeight = Microsoft.UI.Text.FontWeights.SemiBold };
+        var online = new AutoSuggestBox { PlaceholderText = "Type a name to search", HorizontalAlignment = HorizontalAlignment.Stretch, MaxSuggestionListHeight = 300, ItemTemplate = (DataTemplate)Resources["OnlineDistributionTemplate"], TextMemberPath = nameof(OnlineDistribution.FriendlyName) };
+        AutomationProperties.SetName(online, "Search available online WSL distributions");
+        AutomationProperties.SetHelpText(online, "Type to filter by distribution name or select an item from the catalog.");
+        var catalogBrowse = new Button { Content = "Browse catalog", VerticalAlignment = VerticalAlignment.Stretch };
+        var catalogSearchRow = new Grid { ColumnSpacing = 8 };
+        catalogSearchRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        catalogSearchRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        Grid.SetColumn(online, 0);
+        Grid.SetColumn(catalogBrowse, 1);
+        catalogSearchRow.Children.Add(online);
+        catalogSearchRow.Children.Add(catalogBrowse);
+        var catalogStatus = new TextBlock { Text = "Loading the WSL online catalog…", TextWrapping = TextWrapping.Wrap };
+        AutomationProperties.SetLiveSetting(catalogStatus, AutomationLiveSetting.Polite);
+        var catalog = new List<OnlineDistribution>();
+        OnlineDistribution? selectedCatalog = null;
+        _autoOnlineInstallDestination = null;
+        string? installFolderParent = null;
+        var updatingInstallLocation = false;
+        var installName = new TextBox { Header = "New WSL registration name", PlaceholderText = "For example Debian-Work", HorizontalAlignment = HorizontalAlignment.Stretch };
+        var installLocation = new TextBox { Header = "Installation folder (optional)", PlaceholderText = "Blank uses WSL's default location", HorizontalAlignment = HorizontalAlignment.Stretch };
+        var installBrowse = new Button { Content = "Choose parent folder…" };
+        var installButton = new Button { Content = "Install selected distribution" };
+        var importName = new TextBox { Header = "New distribution name", PlaceholderText = "For example Debian-Imported", HorizontalAlignment = HorizontalAlignment.Stretch };
+        var importSource = new TextBox { Header = "TAR or VHDX archive", PlaceholderText = "Choose an archive file", HorizontalAlignment = HorizontalAlignment.Stretch };
+        var importSourceBrowse = new Button { Content = "Choose archive…" };
+        var importLocation = new TextBox { Header = "New installation folder", PlaceholderText = "Enter a path that does not already exist", HorizontalAlignment = HorizontalAlignment.Stretch };
+        var importBrowse = new Button { Content = "Choose parent folder…" };
+        string? importFolderParent = null;
+        string? autoImportLocation = null;
+        var updatingImportLocation = false;
+        var importButton = new Button { Content = "Import as new distribution" };
+        var safetyNote = new TextBlock { Text = "Online installs are deferred from first launch so setup does not open unexpectedly. On first launch, complete the Linux user setup. Imports may start as root unless the archive configures another user.", TextWrapping = TextWrapping.Wrap, Opacity = 0.78 };
+        var dialog = new ContentDialog { Title = "Add a distribution", Content = new ScrollViewer { Content = content, Padding = new Thickness(0, 0, 20, 12), MaxHeight = 640, VerticalScrollBarVisibility = ScrollBarVisibility.Auto }, CloseButtonText = "Close", DefaultButton = ContentDialogButton.Close, XamlRoot = Content.XamlRoot };
+
+        content.Children.Add(intro);
+        content.Children.Add(onlineLabel);
+        content.Children.Add(catalogSearchRow);
+        var catalogRefresh = new Button { Content = "Refresh online catalog" };
+        content.Children.Add(catalogRefresh);
+        content.Children.Add(catalogStatus);
+        content.Children.Add(installName);
+        content.Children.Add(installLocation);
+        content.Children.Add(installBrowse);
+        content.Children.Add(installButton);
+        content.Children.Add(new TextBlock { Text = "Import from an archive", FontSize = 20, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
+        content.Children.Add(importName);
+        content.Children.Add(importSource);
+        content.Children.Add(importSourceBrowse);
+        content.Children.Add(importLocation);
+        content.Children.Add(importBrowse);
+        content.Children.Add(importButton);
+        content.Children.Add(safetyNote);
+
+        async Task RefreshCatalogAsync()
+        {
+            catalogStatus.Text = "Loading the WSL online catalog…";
+            selectedCatalog = null;
+            catalog.Clear();
+            online.ItemsSource = Array.Empty<OnlineDistribution>();
+            try
+            {
+                using var document = await App.Current.Backend.InvokeAsync(new BackendRequest { Action = "Online" });
+                var registeredNames = _distributions.Select(distro => distro.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                foreach (var entry in document.RootElement.EnumerateArray())
+                {
+                    if (!entry.TryGetProperty("Name", out var nameElement) || nameElement.ValueKind != JsonValueKind.String) continue;
+                    var name = nameElement.GetString();
+                    if (string.IsNullOrWhiteSpace(name)) continue;
+                    var friendly = entry.TryGetProperty("FriendlyName", out var friendlyElement) && friendlyElement.ValueKind == JsonValueKind.String ? friendlyElement.GetString() : name;
+                    catalog.Add(new OnlineDistribution(name, string.IsNullOrWhiteSpace(friendly) ? name : friendly, registeredNames.Contains(name)));
+                }
+                online.Text = string.Empty;
+                online.ItemsSource = Array.Empty<OnlineDistribution>();
+                catalogStatus.Text = catalog.Count == 0 ? "No distributions are available in the WSL catalog. You can still import an archive." : $"{catalog.Count} catalog distributions. Already installed images can be added again under a new name. Internet access is required.";
+            }
+            catch (Exception ex) { catalogStatus.Text = "Could not load the WSL online catalog: " + SanitizeError(ex); }
+        }
+
+        online.TextChanged += (_, args) =>
+        {
+            if (args.Reason != AutoSuggestionBoxTextChangeReason.UserInput) return;
+            selectedCatalog = null;
+            var query = online.Text.Trim();
+            var matches = OnlineDistribution.Search(catalog, query);
+            online.ItemsSource = matches;
+            online.IsSuggestionListOpen = matches.Count > 0;
+            catalogStatus.Text = matches.Count == 0
+                ? "No matching distributions. Try another name or import an archive."
+                : $"{matches.Count} matching distribution{(matches.Count == 1 ? string.Empty : "s")}.";
+        };
+        catalogBrowse.Click += (_, _) =>
+        {
+            online.ItemsSource = catalog;
+            online.Focus(FocusState.Programmatic);
+            online.IsSuggestionListOpen = catalog.Count > 0;
+        };
+        online.SuggestionChosen += (_, args) =>
+        {
+            if (args.SelectedItem is OnlineDistribution choice)
+            {
+                selectedCatalog = choice;
+                installName.Text = SuggestRegistrationName(choice.Name);
+                online.Text = choice.FriendlyName;
+                online.IsSuggestionListOpen = false;
+                catalogStatus.Text = choice.AlreadyRegistered
+                    ? $"{choice.FriendlyName} is already installed. A new registration name will create a separate instance."
+                    : $"Selected {choice.FriendlyName} ({choice.Name}).";
+            }
+        };
+        installName.TextChanged += (_, _) =>
+        {
+            if (!string.IsNullOrWhiteSpace(installFolderParent))
+            {
+                var name = installName.Text.Trim();
+                updatingInstallLocation = true;
+                installLocation.Text = string.IsNullOrWhiteSpace(name) ? string.Empty : Path.Combine(installFolderParent, name);
+                updatingInstallLocation = false;
+                _autoOnlineInstallDestination = installLocation.Text;
+            }
+            else UpdateDefaultInstallDestination(installName.Text, installLocation);
+        };
+        installLocation.TextChanged += (_, _) =>
+        {
+            if (updatingInstallLocation) return;
+            if (!installLocation.Text.Trim().Equals(_autoOnlineInstallDestination, StringComparison.OrdinalIgnoreCase))
+            {
+                _autoOnlineInstallDestination = null;
+                installFolderParent = null;
+            }
+        };
+        importName.TextChanged += (_, _) =>
+        {
+            var name = importName.Text.Trim();
+            if (string.IsNullOrWhiteSpace(name)) return;
+            var root = importFolderParent ?? App.Current.Settings.DefaultInstallDirectory;
+            if (string.IsNullOrWhiteSpace(root)) return;
+            var current = importLocation.Text.Trim();
+            if (!string.IsNullOrEmpty(current) && !current.Equals(autoImportLocation, StringComparison.OrdinalIgnoreCase)) return;
+            var next = Path.Combine(root, name);
+            updatingImportLocation = true;
+            importLocation.Text = next;
+            updatingImportLocation = false;
+            autoImportLocation = next;
+        };
+        importLocation.TextChanged += (_, _) =>
+        {
+            if (updatingImportLocation) return;
+            if (!importLocation.Text.Trim().Equals(autoImportLocation, StringComparison.OrdinalIgnoreCase))
+            {
+                autoImportLocation = null;
+                importFolderParent = null;
+            }
+        };
+
+        installBrowse.Click += async (_, _) =>
+        {
+            var path = await PickFolderAsync();
+            if (path is not null)
+            {
+                installFolderParent = path;
+                var name = installName.Text.Trim();
+                updatingInstallLocation = true;
+                installLocation.Text = string.IsNullOrWhiteSpace(name) ? string.Empty : Path.Combine(path, name);
+                updatingInstallLocation = false;
+                _autoOnlineInstallDestination = installLocation.Text;
+            }
+        };
+        importBrowse.Click += async (_, _) =>
+        {
+            var path = await PickFolderAsync();
+            if (path is not null)
+            {
+                importFolderParent = path;
+                var name = importName.Text.Trim();
+                updatingImportLocation = true;
+                importLocation.Text = string.IsNullOrWhiteSpace(name) ? string.Empty : Path.Combine(path, name);
+                updatingImportLocation = false;
+                autoImportLocation = importLocation.Text;
+            }
+        };
+        importSourceBrowse.Click += async (_, _) =>
+        {
+            var picker = new FileOpenPicker(); picker.FileTypeFilter.Add(".tar"); picker.FileTypeFilter.Add(".vhdx"); InitializePicker(picker);
+            var file = await picker.PickSingleFileAsync(); if (file is not null) importSource.Text = file.Path;
+        };
+        catalogRefresh.Click += async (_, _) => await RefreshCatalogAsync();
+        installButton.Click += async (_, _) =>
+        {
+            if (selectedCatalog is null) { catalogStatus.Text = "Choose a distribution from the matching catalog results first."; online.Focus(FocusState.Programmatic); return; }
+            var registrationName = installName.Text.Trim();
+            if (string.IsNullOrWhiteSpace(registrationName)) { catalogStatus.Text = "Enter a new WSL registration name."; installName.Focus(FocusState.Programmatic); return; }
+            if (_distributions.Any(item => item.Name.Equals(registrationName, StringComparison.OrdinalIgnoreCase))) { catalogStatus.Text = $"A distribution named '{registrationName}' is already registered. Choose a different name."; installName.Focus(FocusState.Programmatic); return; }
+            var name = selectedCatalog.Name;
+            dialog.Hide();
+            await RunRequestAsync(new BackendRequest { Action = "Install", Distro = name, NewName = registrationName, Destination = string.IsNullOrWhiteSpace(installLocation.Text) ? null : installLocation.Text.Trim() }, "Install distribution", "Install", $"{selectedCatalog.FriendlyName} as {registrationName}", installLocation.Text.Trim(), BusyRing, StatusText, OperationOutput);
+            if (StatusText.Text.StartsWith("Install distribution completed.", StringComparison.Ordinal)) await RefreshDistributionsAsync();
+        };
+        importButton.Click += async (_, _) =>
+        {
+            var name = importName.Text.Trim(); var source = importSource.Text.Trim(); var destination = importLocation.Text.Trim();
+            if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(source) || string.IsNullOrWhiteSpace(destination)) { catalogStatus.Text = "Choose an archive, new distribution name, and installation folder."; return; }
+            dialog.Hide();
+            await RunRequestAsync(new BackendRequest { Action = "Restore", Source = source, Distro = name, Destination = destination }, "Import distribution", "Restore", name, destination, BusyRing, StatusText, OperationOutput);
+            if (StatusText.Text.StartsWith("Import distribution completed.", StringComparison.Ordinal)) await RefreshDistributionsAsync();
+        };
+
+        await RefreshCatalogAsync();
+        await dialog.ShowAsync();
+    }
+
+    private string SuggestRegistrationName(string sourceName)
+    {
+        var registered = _distributions.Select(item => item.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (!registered.Contains(sourceName)) return sourceName;
+        for (var suffix = 2; suffix < int.MaxValue; suffix++)
+        {
+            var candidate = $"{sourceName}-{suffix}";
+            if (!registered.Contains(candidate)) return candidate;
+        }
+        throw new InvalidOperationException("Could not choose an unused WSL registration name.");
+    }
+
+    private void UpdateDefaultInstallDestination(string registrationName, TextBox destination)
+    {
+        var root = App.Current.Settings.DefaultInstallDirectory;
+        var name = registrationName.Trim();
+        if (string.IsNullOrWhiteSpace(root) || string.IsNullOrWhiteSpace(name)) return;
+        var current = destination.Text.Trim();
+        if (!string.IsNullOrEmpty(current) && !current.Equals(_autoOnlineInstallDestination, StringComparison.OrdinalIgnoreCase)) return;
+        var next = Path.Combine(root, name);
+        destination.Text = next;
+        _autoOnlineInstallDestination = next;
+    }
+
+    private void UpdateNamedInstallDestination(TextBox name, TextBox destination, ref string? lastAutoDestination)
+    {
+        var root = ReferenceEquals(destination, RestoreDestination) ? _restoreFolderParent
+            : ReferenceEquals(destination, CloneDestination) ? _cloneFolderParent
+            : App.Current.Settings.DefaultInstallDirectory;
+        root ??= App.Current.Settings.DefaultInstallDirectory;
+        var registrationName = name.Text.Trim();
+        if (string.IsNullOrWhiteSpace(root) || string.IsNullOrWhiteSpace(registrationName)) return;
+        var current = destination.Text.Trim();
+        if (!string.IsNullOrEmpty(current) && !current.Equals(lastAutoDestination, StringComparison.OrdinalIgnoreCase)) return;
+        var next = Path.Combine(root, registrationName);
+        destination.Text = next;
+        lastAutoDestination = next;
+    }
+
+    private void RestoreName_TextChanged(object sender, TextChangedEventArgs e) =>
+        UpdateNamedInstallDestination(RestoreName, RestoreDestination, ref _autoRestoreDestination);
+
+    private void CloneName_TextChanged(object sender, TextChangedEventArgs e) =>
+        UpdateNamedInstallDestination(CloneName, CloneDestination, ref _autoCloneDestination);
 
     private async void Start_Click(object sender, RoutedEventArgs e) => await RunDistributionActionAsync("Start");
     private async void Terminate_Click(object sender, RoutedEventArgs e) => await RunDistributionActionAsync("Terminate");
@@ -213,6 +492,24 @@ public sealed partial class MainPage : Page
     {
         var path = await PickFolderAsync();
         if (path is not null) BackupDestination.Text = path;
+    }
+
+    private async void ExportDirectoryBrowse_Click(object sender, RoutedEventArgs e)
+    {
+        var path = await PickFolderAsync();
+        if (path is not null) DefaultExportDirectory.Text = path;
+    }
+
+    private async void BackupDirectoryBrowse_Click(object sender, RoutedEventArgs e)
+    {
+        var path = await PickFolderAsync();
+        if (path is not null) DefaultBackupDirectory.Text = path;
+    }
+
+    private async void InstallDirectoryBrowse_Click(object sender, RoutedEventArgs e)
+    {
+        var path = await PickFolderAsync();
+        if (path is not null) DefaultInstallDirectory.Text = path;
     }
 
     private void BackupDistroList_SelectionChanged(object sender, SelectionChangedEventArgs e) => UpdateBackupSelectionSummary();
@@ -246,7 +543,13 @@ public sealed partial class MainPage : Page
     private async void RestoreFolderBrowse_Click(object sender, RoutedEventArgs e)
     {
         var path = await PickFolderAsync();
-        if (path is not null) RestoreDestination.Text = path;
+        if (path is not null)
+        {
+            _restoreFolderParent = path;
+            var name = RestoreName.Text.Trim();
+            RestoreDestination.Text = string.IsNullOrWhiteSpace(name) ? string.Empty : Path.Combine(path, name);
+            _autoRestoreDestination = RestoreDestination.Text;
+        }
     }
 
     private async void Backup_Click(object sender, RoutedEventArgs e)
@@ -285,7 +588,13 @@ public sealed partial class MainPage : Page
     private async void CloneBrowse_Click(object sender, RoutedEventArgs e)
     {
         var path = await PickFolderAsync();
-        if (path is not null) CloneDestination.Text = path;
+        if (path is not null)
+        {
+            _cloneFolderParent = path;
+            var name = CloneName.Text.Trim();
+            CloneDestination.Text = string.IsNullOrWhiteSpace(name) ? string.Empty : Path.Combine(path, name);
+            _autoCloneDestination = CloneDestination.Text;
+        }
     }
 
     private void MigrationDistro_SelectionChanged(object sender, SelectionChangedEventArgs e) => _movePreview = null;
@@ -425,6 +734,22 @@ public sealed partial class MainPage : Page
     {
         if (string.IsNullOrWhiteSpace(DiagnosticsOutput.Text)) await RefreshDiagnosticsAsync();
         if (string.IsNullOrWhiteSpace(DiagnosticsOutput.Text)) return;
+        var configuredExportDirectory = App.Current.Settings.DefaultExportDirectory;
+        if (!string.IsNullOrWhiteSpace(configuredExportDirectory))
+        {
+            var path = Path.Combine(configuredExportDirectory, $"wsl-manager-diagnostics_{DateTime.Now:yyyyMMdd_HHmmss}_{Guid.NewGuid():N}.json");
+            try
+            {
+                await DiagnosticsExportService.WriteJsonAsync(
+                    path,
+                    DiagnosticsOutput.Text,
+                    Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData));
+                DiagnosticsStatus.Text = $"Diagnostics saved to {path}";
+            }
+            catch (Exception ex) { DiagnosticsStatus.Text = "Could not save diagnostics: " + SanitizeError(ex); }
+            return;
+        }
         var picker = new FileSavePicker();
         picker.SuggestedFileName = "wsl-manager-diagnostics";
         picker.FileTypeChoices.Add("JSON", new List<string> { ".json" });
@@ -497,11 +822,49 @@ public sealed partial class MainPage : Page
             SettingsStatus.Text = "Log retention must be a whole number from 1 to 3650.";
             return;
         }
+        var exportDirectory = ValidateSettingsDirectory(DefaultExportDirectory.Text, "Export", out var pathError);
+        if (pathError is not null) { SettingsStatus.Text = pathError; return; }
+        var backupDirectory = ValidateSettingsDirectory(DefaultBackupDirectory.Text, "Backup", out pathError);
+        if (pathError is not null) { SettingsStatus.Text = pathError; return; }
+        var installDirectory = ValidateSettingsDirectory(DefaultInstallDirectory.Text, "Installation", out pathError);
+        if (pathError is not null) { SettingsStatus.Text = pathError; return; }
+
         var preference = ThemeChoice.SelectedItem is ComboBoxItem item && Enum.TryParse(item.Tag as string, out ThemePreference theme) ? theme : ThemePreference.System;
-        App.Current.Settings = new DesktopSettings { Theme = preference, LogRetentionDays = days };
+        var previous = App.Current.Settings;
+        var visibleBackupPath = BackupDestination.Text.Trim();
+        var followedSavedDefault = string.IsNullOrEmpty(visibleBackupPath)
+            || visibleBackupPath.Equals(previous.DefaultBackupDirectory ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+        App.Current.Settings = previous with
+        {
+            Theme = preference,
+            LogRetentionDays = days,
+            DefaultExportDirectory = exportDirectory,
+            DefaultBackupDirectory = backupDirectory,
+            DefaultInstallDirectory = installDirectory
+        };
+        if (followedSavedDefault) BackupDestination.Text = backupDirectory ?? string.Empty;
         ApplyTheme(preference);
         try { App.Current.SettingsStore.Save(App.Current.Settings); SettingsStatus.Text = "Settings saved for this Windows user."; }
         catch (Exception ex) { SettingsStatus.Text = "Could not save settings: " + SanitizeError(ex); }
+    }
+
+    private static string? ValidateSettingsDirectory(string value, string label, out string? error)
+    {
+        error = null;
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        string path;
+        try { path = Path.GetFullPath(value.Trim()); }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            error = $"{label} folder is not a valid path.";
+            return null;
+        }
+        if (!Directory.Exists(path))
+        {
+            error = $"{label} folder must already exist: {path}";
+            return null;
+        }
+        return path;
     }
 
     private async Task RunRequestAsync(BackendRequest request, string label, string? confirmationAction, string target, string? destination,
@@ -589,4 +952,5 @@ public sealed partial class MainPage : Page
         else _operationState.End(text);
         if (ReferenceEquals(ring, BusyRing)) StatusText.Text = text;
     }
+
 }

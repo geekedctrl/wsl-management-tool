@@ -13,6 +13,9 @@ public sealed record DesktopSettings
 {
     public ThemePreference Theme { get; init; } = ThemePreference.System;
     public int LogRetentionDays { get; init; } = 90;
+    public string? DefaultExportDirectory { get; init; }
+    public string? DefaultBackupDirectory { get; init; }
+    public string? DefaultInstallDirectory { get; init; }
 }
 
 public sealed class DesktopSettingsStore
@@ -42,7 +45,13 @@ public sealed class DesktopSettingsStore
     {
         ArgumentNullException.ThrowIfNull(settings);
         var retention = Math.Clamp(settings.LogRetentionDays, 1, 3650);
-        var normalized = settings with { LogRetentionDays = retention };
+        var normalized = settings with
+        {
+            LogRetentionDays = retention,
+            DefaultExportDirectory = NormalizeDirectory(settings.DefaultExportDirectory),
+            DefaultBackupDirectory = NormalizeDirectory(settings.DefaultBackupDirectory),
+            DefaultInstallDirectory = NormalizeDirectory(settings.DefaultInstallDirectory)
+        };
         var directory = System.IO.Path.GetDirectoryName(_path)!;
         Directory.CreateDirectory(directory);
         var temporary = _path + ".tmp";
@@ -52,13 +61,16 @@ public sealed class DesktopSettingsStore
         else
             File.Move(temporary, _path);
     }
+
+    private static string? NormalizeDirectory(string? path) =>
+        string.IsNullOrWhiteSpace(path) ? null : System.IO.Path.GetFullPath(path.Trim());
 }
 
 public static class ConfirmationPolicy
 {
     public static bool RequiresConfirmation(string action) => action.ToLowerInvariant() switch
     {
-        "backup" or "restore" or "move" or "clone" or "terminate" or "convert" or "resize" or "setdefault" => true,
+        "backup" or "restore" or "move" or "clone" or "terminate" or "convert" or "resize" or "setdefault" or "install" => true,
         _ => false
     };
 
@@ -72,6 +84,7 @@ public static class ConfirmationPolicy
         "convert" => $"Convert {distro} to the selected WSL generation. This can take time and changes the distribution's storage format.",
         "resize" => $"Expand virtual disk capacity for {distro}. This does not reduce Linux filesystem usage or shrink the VHDX file.",
         "setdefault" => $"Make {distro} the default WSL distribution.",
+        "install" => $"Download and register {distro} as a new WSL distribution{(string.IsNullOrWhiteSpace(destination) ? string.Empty : $" at {destination}")}. Existing distributions will not be changed.",
         _ => $"Run {action} for {distro}."
     };
 }

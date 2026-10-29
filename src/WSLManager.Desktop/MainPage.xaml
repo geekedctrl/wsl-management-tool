@@ -7,6 +7,22 @@
     xmlns:local="using:WSLManager_Desktop"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d">
+    <Page.Resources>
+        <local:DistributionLogoConverter x:Key="DistributionLogoConverter" />
+        <DataTemplate x:Key="OnlineDistributionTemplate">
+            <Grid Padding="4,6" ColumnSpacing="10">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                <Border Width="44" Height="44" CornerRadius="12" Background="{ThemeResource CardBackgroundFillColorSecondaryBrush}" VerticalAlignment="Center" AutomationProperties.AccessibilityView="Raw">
+                    <Image Width="34" Height="34" Source="{Binding LogoKey, Converter={StaticResource DistributionLogoConverter}}" Stretch="Uniform" />
+                </Border>
+                <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="1">
+                    <TextBlock Text="{Binding FriendlyName}" FontSize="14" TextTrimming="CharacterEllipsis" />
+                    <TextBlock Text="{Binding Name}" FontSize="12" Opacity="0.72" TextTrimming="CharacterEllipsis" />
+                    <TextBlock Text="{Binding RegistrationStatus}" FontSize="11" Opacity="0.68" TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+            </Grid>
+        </DataTemplate>
+    </Page.Resources>
     <NavigationView x:Name="AppNavigation" IsSettingsVisible="False" PaneDisplayMode="LeftCompact"
                     IsBackButtonVisible="Collapsed" ItemInvoked="Navigation_ItemInvoked">
         <NavigationView.MenuItems>
@@ -24,7 +40,7 @@
                 <Border x:Name="DistributionsFrame" MaxWidth="2800" HorizontalAlignment="Center" Padding="40,32,40,40"><StackPanel Spacing="20">
                     <TextBlock Text="Distributions" Style="{StaticResource TitleTextBlockStyle}" />
                     <TextBlock Text="Inspect and manage registered WSL distributions." Style="{StaticResource BodyTextBlockStyle}" Opacity="0.78" />
-                    <StackPanel Orientation="Horizontal" Spacing="12"><Button Content="Refresh" Click="Refresh_Click" /><ProgressRing x:Name="BusyRing" Width="22" Height="22" IsActive="False" VerticalAlignment="Center" /><TextBlock x:Name="StatusText" Text="Ready" VerticalAlignment="Center" AutomationProperties.LiveSetting="Polite" /></StackPanel>
+                    <StackPanel Orientation="Horizontal" Spacing="12"><Button Content="Refresh" Click="Refresh_Click" /><Button Content="Add distribution…" Click="AddDistribution_Click" /><ProgressRing x:Name="BusyRing" Width="22" Height="22" IsActive="False" VerticalAlignment="Center" /><TextBlock x:Name="StatusText" Text="Ready" VerticalAlignment="Center" AutomationProperties.LiveSetting="Polite" /></StackPanel>
                     <Grid x:Name="DistributionColumns" ColumnSpacing="24">
                         <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="0" /></Grid.ColumnDefinitions>
                         <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
@@ -32,7 +48,7 @@
                             <StackPanel Spacing="12">
                                 <TextBlock Text="Registered distributions" Style="{StaticResource SubtitleTextBlockStyle}" />
                                 <ListView x:Name="DistributionList" SelectionMode="Single" SelectionChanged="DistributionList_SelectionChanged" MinHeight="220" MaxHeight="680" AutomationProperties.Name="Registered WSL distributions">
-                                    <ListView.ItemTemplate><DataTemplate><StackPanel Padding="8,10" Spacing="4"><TextBlock Text="{Binding Name}" FontWeight="SemiBold" /><TextBlock Text="{Binding Summary}" Opacity="0.8" /><TextBlock Text="{Binding Flags}" FontSize="12" Opacity="0.72" /></StackPanel></DataTemplate></ListView.ItemTemplate>
+                                    <ListView.ItemTemplate><DataTemplate><Grid Padding="8,10" ColumnSpacing="14"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions><Border Width="56" Height="56" CornerRadius="16" Background="{ThemeResource CardBackgroundFillColorSecondaryBrush}" VerticalAlignment="Center" AutomationProperties.AccessibilityView="Raw"><Image Width="42" Height="42" Source="{Binding LogoKey, Converter={StaticResource DistributionLogoConverter}}" Stretch="Uniform" /></Border><StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="3"><TextBlock Text="{Binding Name}" FontWeight="SemiBold" /><TextBlock Text="{Binding Summary}" Opacity="0.8" /><TextBlock Text="{Binding Flags}" FontSize="12" Opacity="0.72" /></StackPanel></Grid></DataTemplate></ListView.ItemTemplate>
                                 </ListView>
                                 <TextBlock x:Name="EmptyDistributions" Text="No distributions detected. Install or register a WSL distribution, then refresh." TextWrapping="Wrap" Visibility="Collapsed" />
                             </StackPanel>
@@ -48,7 +64,7 @@
                                 </StackPanel>
                             </Border>
                             <Border Padding="22" CornerRadius="10" BorderThickness="1" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
-                                <StackPanel Spacing="10"><TextBlock Text="Distribution details and operation result" Style="{StaticResource SubtitleTextBlockStyle}" /><TextBlock x:Name="DetailsHint" Text="Select a distribution to view its details and available actions." TextWrapping="Wrap" /><TextBlock x:Name="OperationOutput" FontFamily="Consolas" TextWrapping="Wrap" IsTextSelectionEnabled="True" /></StackPanel>
+                                <StackPanel Spacing="10"><TextBlock Text="Distribution details" Style="{StaticResource SubtitleTextBlockStyle}" /><TextBlock x:Name="DetailsHint" Text="Select a distribution to view its details and available actions." TextWrapping="Wrap" /><ItemsControl x:Name="DetailsTable"><ItemsControl.ItemTemplate><DataTemplate><Grid Padding="8,6" ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="220" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions><TextBlock Text="{Binding Label}" FontWeight="SemiBold" TextWrapping="Wrap" /><TextBlock Grid.Column="1" Text="{Binding Value}" TextWrapping="Wrap" IsTextSelectionEnabled="True" /></Grid></DataTemplate></ItemsControl.ItemTemplate></ItemsControl><TextBlock Text="Latest operation" Style="{StaticResource BodyStrongTextBlockStyle}" Margin="0,8,0,0" /><TextBlock x:Name="OperationOutput" TextWrapping="Wrap" IsTextSelectionEnabled="True" /></StackPanel>
                             </Border>
                         </StackPanel>
                     </Grid>
@@ -81,8 +97,8 @@
                                 <TextBlock Text="Restore from a backup" Style="{StaticResource SubtitleTextBlockStyle}" />
                                 <TextBlock Text="Restores always register a new distribution. Existing registrations and installation folders are never overwritten. Imported distributions may start as root; set a default Linux user if needed." TextWrapping="Wrap" Opacity="0.8" />
                                 <TextBox x:Name="RestoreSource" Header="Backup file" PlaceholderText="Select a .tar or supported .vhdx file" HorizontalAlignment="Stretch" /><Button Content="Browse for backup…" Click="RestoreBrowse_Click" HorizontalAlignment="Left" />
-                                <TextBox x:Name="RestoreName" Header="New distribution name" PlaceholderText="For example Ubuntu-Restored" HorizontalAlignment="Stretch" />
-                                <TextBox x:Name="RestoreDestination" Header="New installation folder" PlaceholderText="Choose a folder that does not exist yet" HorizontalAlignment="Stretch" /><Button Content="Browse for installation folder…" Click="RestoreFolderBrowse_Click" HorizontalAlignment="Left" />
+                                <TextBox x:Name="RestoreName" Header="New distribution name" PlaceholderText="For example Ubuntu-Restored" HorizontalAlignment="Stretch" TextChanged="RestoreName_TextChanged" />
+                                <TextBox x:Name="RestoreDestination" Header="New installation folder" PlaceholderText="A new folder will be created under the selected parent" HorizontalAlignment="Stretch" /><Button Content="Choose parent folder…" Click="RestoreFolderBrowse_Click" HorizontalAlignment="Left" />
                                 <Button Content="Restore to new distribution" Click="Restore_Click" HorizontalAlignment="Left" />
                             </StackPanel>
                         </Border>
@@ -108,7 +124,7 @@
                             <StackPanel Spacing="16"><TextBlock Text="Move this distribution" Style="{StaticResource SubtitleTextBlockStyle}" /><TextBlock Text="Moves the existing WSL 2 installation. The source location changes after verification." TextWrapping="Wrap" Opacity="0.8" /><TextBox x:Name="MoveDestination" Header="New installation folder" PlaceholderText="Choose a new, empty folder" HorizontalAlignment="Stretch" TextChanged="MoveDestination_TextChanged" /><Button Content="Browse for move folder…" Click="MoveBrowse_Click" HorizontalAlignment="Left" /><StackPanel Orientation="Horizontal" Spacing="8"><Button Content="Preview move" Click="MovePreview_Click" /><Button Content="Move distribution" Click="Move_Click" /></StackPanel></StackPanel>
                         </Border>
                         <Border x:Name="CloneCard" Grid.Row="0" Grid.Column="0" Padding="24" CornerRadius="10" BorderThickness="1" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
-                            <StackPanel Spacing="16"><TextBlock Text="Create a separate clone" Style="{StaticResource SubtitleTextBlockStyle}" /><TextBlock Text="The original stays registered. Choose a new distribution name and a separate installation folder." TextWrapping="Wrap" Opacity="0.8" /><TextBox x:Name="CloneName" Header="New clone name" PlaceholderText="For example Ubuntu-Test" HorizontalAlignment="Stretch" /><TextBox x:Name="CloneDestination" Header="Clone installation folder" PlaceholderText="Choose a new folder" HorizontalAlignment="Stretch" /><Button Content="Browse for clone folder…" Click="CloneBrowse_Click" HorizontalAlignment="Left" /><Button Content="Create clone" Click="Clone_Click" HorizontalAlignment="Left" /></StackPanel>
+                            <StackPanel Spacing="16"><TextBlock Text="Create a separate clone" Style="{StaticResource SubtitleTextBlockStyle}" /><TextBlock Text="The original stays registered. Choose a new distribution name and a separate installation folder." TextWrapping="Wrap" Opacity="0.8" /><TextBox x:Name="CloneName" Header="New clone name" PlaceholderText="For example Ubuntu-Test" HorizontalAlignment="Stretch" TextChanged="CloneName_TextChanged" /><TextBox x:Name="CloneDestination" Header="Clone installation folder" PlaceholderText="A new folder will be created under the selected parent" HorizontalAlignment="Stretch" /><Button Content="Choose parent folder…" Click="CloneBrowse_Click" HorizontalAlignment="Left" /><Button Content="Create clone" Click="Clone_Click" HorizontalAlignment="Left" /></StackPanel>
                         </Border>
                     </Grid>
                     <StackPanel Orientation="Horizontal" Spacing="12"><ProgressRing x:Name="MigrationBusy" Width="22" Height="22" IsActive="False" /><TextBlock x:Name="MigrationStatus" Text="Ready" TextWrapping="Wrap" VerticalAlignment="Center" AutomationProperties.LiveSetting="Polite" /></StackPanel>
@@ -145,7 +161,13 @@
                 <Border x:Name="SettingsFrame" MaxWidth="1400" HorizontalAlignment="Center" Padding="40,32,40,40"><StackPanel Spacing="20">
                     <TextBlock Text="Settings" Style="{StaticResource TitleTextBlockStyle}" /><TextBlock Text="Preferences are stored for the current Windows user. They do not change global WSL or Windows configuration." TextWrapping="Wrap" Opacity="0.78" />
                     <ComboBox x:Name="ThemeChoice" Header="App theme" SelectedIndex="0" Width="260" SelectionChanged="ThemeChoice_SelectionChanged"><ComboBoxItem Content="System" Tag="System" /><ComboBoxItem Content="Light" Tag="Light" /><ComboBoxItem Content="Dark" Tag="Dark" /></ComboBox>
-                    <TextBox x:Name="RetentionDays" Header="Log retention (days, 1–3650)" Text="90" Width="260" /><Button Content="Save settings" Click="SettingsSave_Click" HorizontalAlignment="Left" /><TextBlock x:Name="SettingsStatus" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
+                    <TextBox x:Name="RetentionDays" Header="Log retention (days, 1–3650)" Text="90" Width="260" />
+                    <TextBlock Text="Default folders" Style="{StaticResource SubtitleTextBlockStyle}" />
+                    <TextBlock Text="Choose existing folders once. Diagnostics JSON exports use the export folder; WSL backups use the backup folder. New distro installs, imports, restores, and clones create a child folder under the installation root." TextWrapping="Wrap" Opacity="0.78" />
+                    <TextBox x:Name="DefaultExportDirectory" Header="Default export folder" PlaceholderText="Optional existing folder" HorizontalAlignment="Stretch" /><Button Content="Choose export folder…" Click="ExportDirectoryBrowse_Click" HorizontalAlignment="Left" />
+                    <TextBox x:Name="DefaultBackupDirectory" Header="Default backup folder" PlaceholderText="Optional existing folder" HorizontalAlignment="Stretch" /><Button Content="Choose backup folder…" Click="BackupDirectoryBrowse_Click" HorizontalAlignment="Left" />
+                    <TextBox x:Name="DefaultInstallDirectory" Header="Default installation root" PlaceholderText="Optional existing folder" HorizontalAlignment="Stretch" /><Button Content="Choose installation root…" Click="InstallDirectoryBrowse_Click" HorizontalAlignment="Left" />
+                    <Button Content="Save settings" Click="SettingsSave_Click" HorizontalAlignment="Left" /><TextBlock x:Name="SettingsStatus" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
                 </StackPanel></Border>
             </ScrollViewer>
         </Grid>

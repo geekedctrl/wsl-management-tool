@@ -62,9 +62,9 @@ function Show-Menu {
 }
 
 try {
-    if($Help -or $Action -eq 'Help'){Write-Host 'WSL Manager v1.0.0';Write-Host 'Usage: ./WSL-Manager.ps1 -Action <List|Info|Start|Terminate|SetDefault|Convert|Unregister|Backup|Restore|Move|Clone|Diagnose|Disk|Resize>';Write-Host 'Run without -Action to open the interactive menu. Use -WhatIf to preview mutations.';return}
+    if($Help -or $Action -eq 'Help'){Write-Host 'WSL Manager v1.0.0';Write-Host 'Usage: ./WSL-Manager.ps1 -Action <List|Online|Install|Info|Start|Terminate|SetDefault|Convert|Unregister|Backup|Restore|Move|Clone|Diagnose|Disk|Resize>';Write-Host 'Run without -Action to open the interactive menu. Use -WhatIf to preview mutations.';return}
     if(-not $Action){ if([Console]::IsInputRedirected){throw 'Interactive menu requires a terminal. Use -Help or specify -Action.'}; Show-Menu; return }
-    if($Action -notin @('List','Info','Start','Terminate','SetDefault','Convert','Unregister','Backup','Restore','Move','Clone','Diagnose','Disk','Resize')){throw "Unknown action '$Action'. Use -Help for supported actions."}
+    if($Action -notin @('List','Online','Install','Info','Start','Terminate','SetDefault','Convert','Unregister','Backup','Restore','Move','Clone','Diagnose','Disk','Resize')){throw "Unknown action '$Action'. Use -Help for supported actions."}
     if($Format -notin @('Tar','Vhdx')){throw "Unsupported format '$Format'. Choose Tar or Vhdx."}
     if($OutputFormat -notin @('Human','Json')){throw "Unsupported output format '$OutputFormat'. Choose Human or Json."}
     if($PSBoundParameters.ContainsKey('Version') -and $Version -notin @('1','2')){throw 'Version must be 1 or 2.'}
@@ -72,6 +72,8 @@ try {
     $result=$null
     switch($Action){
         List {$result=@(Get-WslDistributions)}
+        Online {$result=@(Get-WslOnlineDistributions)}
+        Install {if(-not $Distro){throw '-Distro must be an exact ID from `wsl --list --online`.'};$result=Install-WslDistribution -Name $Distro[0] -NewName $NewName -Destination $Destination -WhatIf:$WhatIfPreference -Confirm:($PSBoundParameters.ContainsKey('Confirm'))}
         Info {if(-not $Distro){throw '-Distro is required for Info.'};$result=Get-WslDistroDetails $Distro[0]}
         Diagnose {$result=Get-ManagerDiagnostics}
         Disk {if($Distro){$result=Get-WslDistroDetails $Distro[0]}else{$diag=Get-ManagerDiagnostics;$result=[pscustomobject]@{Volumes=$diag.Volumes;Distributions=$diag.Distributions;Explanation='Linux filesystem usage, VHDX allocated file size, and VHDX virtual capacity are different measurements.'}}}

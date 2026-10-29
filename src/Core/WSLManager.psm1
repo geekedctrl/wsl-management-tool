@@ -78,7 +78,26 @@ function Get-WslCapabilities {
         $h = Invoke-Wsl -ArgumentList @('--help') -AllowFailure; $help = $h.StdOut + "`n" + $h.StdErr
         $s = Invoke-Wsl -ArgumentList @('--status') -AllowFailure; $status=$s.StdOut + "`n" + $s.StdErr
     }
-    [pscustomobject]@{ Available=$available; Version=$version; Status=$status.Trim(); SupportsVhdExport=($help -match '--vhd'); SupportsImportInPlace=($help -match '--import-in-place'); SupportsSetVersion=($help -match '--set-version'); SupportsManage=($help -match '--manage'); SupportsManageMove=($help -match '--move'); SupportsResize=($help -match '--resize'); Help=$help.Trim() }
+    $installHelp=''; $inInstall=$false
+    foreach($line in ($help -split "`r?`n")) {
+        if($line -match '^\s*--install(?:\s|$)'){$inInstall=$true}
+        elseif($inInstall -and $line -match '^\s*--(?:manage|mount|import|import-in-place|export|list|set-version|set-default|set-default-version|unregister|terminate|shutdown|status|version|help)(?:\s|$)'){break}
+        if($inInstall){$installHelp+=$line+"`n"}
+    }
+    [pscustomobject]@{ Available=$available; Version=$version; Status=$status.Trim(); SupportsVhdExport=($help -match '--vhd'); SupportsImportInPlace=($help -match '--import-in-place'); SupportsSetVersion=($help -match '--set-version'); SupportsManage=($help -match '--manage'); SupportsManageMove=($help -match '--move'); SupportsResize=($help -match '--resize'); SupportsInstall=($help -match '--install'); SupportsInstallName=($installHelp -match '(?m)^\s*--name(?:\s|,|$)'); SupportsInstallLocation=($installHelp -match '(?m)^\s*--location(?:\s|,|$)'); SupportsInstallNoLaunch=($installHelp -match '(?m)^\s*--no-launch(?:\s|,|$)'); Help=$help.Trim() }
+}
+
+function Get-WslOnlineDistributions {
+    $result=Invoke-Wsl -ArgumentList @('--list','--online')
+    $items=@()
+    foreach($line in ($result.StdOut -split "`r?`n")){
+        if($line -match '^\s*([A-Za-z0-9][A-Za-z0-9._-]*)\s{2,}(.+?)\s*$'){
+            $name=$Matches[1].Trim(); $friendly=$Matches[2].Trim()
+            if($name -notin @('NAME','DISTRIBUTION')){$items += [pscustomobject]@{Name=$name;FriendlyName=$friendly}}
+        }
+    }
+    if(-not $items.Count){throw 'WSL returned no parseable online distributions. Verify the installed WSL version and network access.'}
+    return $items
 }
 
 function Get-WslDistributions {
@@ -269,6 +288,38 @@ function Restore-WslBackup {
     }
 }
 
+function Install-WslDistribution {
+    [CmdletBinding(SupportsShouldProcess,ConfirmImpact='High')]
+    param([Parameter(Mandatory)][ValidatePattern('^[A-Za-z0-9][A-Za-z0-9._-]*$')][string]$Name,[ValidatePattern('^[A-Za-z0-9][A-Za-z0-9._-]*$')][string]$NewName,[string]$Destination)
+    $cap=Get-WslCapabilities
+    if(-not $cap.Available -or -not $cap.SupportsInstall){throw 'This WSL installation does not advertise distribution installation support.'}
+    if($cap.Version -notmatch '(?im)^\s*WSL version:\s*\d'){throw 'A functioning Microsoft Store WSL package with a reported WSL version is required. This workflow will not enable Windows features or install the WSL runtime.'}
+    if(-not $cap.SupportsInstallNoLaunch){throw 'This WSL version does not advertise --no-launch; installation is unavailable to avoid opening an unexpected first-run Linux setup prompt.'}
+    $registrationName=if([string]::IsNullOrWhiteSpace($NewName)){$Name}else{$NewName.Trim()}
+    if($registrationName -cne $Name -and -not $cap.SupportsInstallName){throw 'This WSL version does not advertise --name, so installing the selected distro under a different registration name is unsupported.'}
+    if(@(Get-WslDistributions|Where-Object {$_.Name -ieq $registrationName}).Count){throw "A distribution named '$registrationName' is already registered. Existing distributions are never replaced."}
+    $known=@(Get-WslOnlineDistributions|Where-Object {$_.Name -ceq $Name})
+    if($known.Count -ne 1){throw "'$Name' is not an exact distribution ID in the current WSL online catalog. Refresh the catalog and choose a listed ID."}
+    $arguments=@('--install','--distribution',$Name)
+    if($registrationName -cne $Name){$arguments+=@('--name',$registrationName)}
+    $location=$null
+    if(-not [string]::IsNullOrWhiteSpace($Destination)){
+        if(-not $cap.SupportsInstallLocation){throw 'This WSL version does not advertise --location; omit the install folder or update WSL.'}
+        $location=[IO.Path]::GetFullPath($Destination)
+        if(Test-Path -LiteralPath $location){throw 'Install location already exists; choose a new folder so existing files are never reused.'}
+        $parent=[IO.Directory]::GetParent($location)
+        if(-not $parent -or -not (Test-Path -LiteralPath $parent.FullName -PathType Container)){throw 'The parent folder for the install location must already exist.'}
+        $arguments+=@('--location',$location)
+    }
+    $arguments+='--no-launch'
+    if(-not $PSCmdlet.ShouldProcess($registrationName,"Install $Name as a new WSL distribution$(if($location){" at $location"})")){return [pscustomobject]@{Planned=$true;Source=$Name;Name=$registrationName;Destination=$location}}
+    Invoke-LoggedOperation 'Install' $registrationName {
+        Invoke-Wsl -ArgumentList $arguments | Out-Null
+        $installed=Get-WslDistro $registrationName
+        [pscustomobject]@{Source=$Name;Name=$installed.Name;Version=$installed.Version;State=$installed.State;Destination=$location;Registered=$true;LaunchDeferred=$true;FirstLaunchNote='Launch the distribution when ready to finish creating its initial Linux user.'}
+    }
+}
+
 function Invoke-DistributionAction {
     [CmdletBinding(SupportsShouldProcess,ConfirmImpact='Medium')]
     param([ValidateSet('Start','Terminate','SetDefault','Convert','Unregister')][string]$Action,[Parameter(Mandatory)][string]$Name,[int]$Version)
@@ -355,4 +406,4 @@ function Resize-WslDistribution {
     Invoke-LoggedOperation 'Resize' $Name {Invoke-Wsl -ArgumentList @('--manage',$Name,'--resize',$Size) | Out-Null;$verified=Get-VHD -Path $details.VirtualDisk.Path -ErrorAction Stop;if([long]$verified.Size -lt $requested){throw 'WSL returned success but post-operation virtual capacity is below target.'};[pscustomobject]@{Name=$Name;CurrentBytes=[long]$vhd.Size;CapacityBytes=[long]$verified.Size;Verified=$true}}
 }
 
-Export-ModuleMember -Function Invoke-Wsl,Set-WslCommandExecutor,Set-WslManagerDataDirectory,Get-WslCapabilities,Get-WslDistributions,Get-WslRunningNames,Get-WslDistro,Get-WslDistroDetails,Get-ManagerDiagnostics,Backup-WslDistribution,Restore-WslBackup,Invoke-DistributionAction,Move-WslDistribution,Copy-WslDistribution,Resize-WslDistribution
+Export-ModuleMember -Function Invoke-Wsl,Set-WslCommandExecutor,Set-WslManagerDataDirectory,Get-WslCapabilities,Get-WslDistributions,Get-WslOnlineDistributions,Get-WslDistro,Get-WslDistroDetails,Get-ManagerDiagnostics,Backup-WslDistribution,Restore-WslBackup,Install-WslDistribution,Invoke-DistributionAction,Move-WslDistribution,Copy-WslDistribution,Resize-WslDistribution

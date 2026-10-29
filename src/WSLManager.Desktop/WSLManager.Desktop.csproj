@@ -19,9 +19,9 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Content Include="Assets\AppIcon.ico" CopyToOutputDirectory="PreserveNewest" />
-    <Content Include="..\..\WSL-Manager.ps1" Link="backend\WSL-Manager.ps1" CopyToOutputDirectory="PreserveNewest" />
-    <Content Include="..\Core\WSLManager.psm1" Link="backend\src\Core\WSLManager.psm1" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\WSL-Manager.ps1" Link="backend\WSL-Manager.ps1" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
+    <Content Include="..\Core\WSLManager.psm1" Link="backend\src\Core\WSLManager.psm1" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
+    <Content Include="Assets\DistributionLogos\*.svg" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
   </ItemGroup>
 
   <ItemGroup>
